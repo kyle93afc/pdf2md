@@ -1,0 +1,49 @@
+---
+description: Always use current system time for research tasks to ensure time-accurate results
+globs: 
+alwaysApply: false
+---
+
+# Time-Accurate Research Protocol
+
+## Context
+
+- Apply when user requests deep research or information that may be time-sensitive
+- Ensures that research results consider the actual current date/time rather than training data cutoff
+- Addresses the issue of outdated time context in research results
+
+## Critical Rules
+
+- Always obtain current system date/time using terminal date command before conducting research
+- Inject current date/time into all research tool requests (especially search tools)
+- Explicitly mention the current date in result context (e.g., "As of [date], the information shows...")
+- Never rely on internal knowledge cutoff date when time context matters
+- For web searches or API requests, include date parameters when available
+- When reporting time-sensitive information, explicitly state the reference time
+
+## Examples
+
+<example>
+User: "Research the latest developments in quantum computing"
+
+Agent: *First runs date command to get current system time*
+```
+run_terminal_cmd("date")
+```
+Result: "Wed May 15 14:32:45 PST 2025"
+
+*Then performs web search with time context*
+```
+web_search("latest quantum computing developments as of May 2025")
+```
+
+Agent: "As of May 15, 2025, the latest developments in quantum computing include [research findings]. The most recent breakthrough announced just last month was [specific detail]..."
+</example>
+
+<example type="invalid">
+User: "What are the current AI regulations?"
+
+Agent: "Based on my knowledge, the current AI regulations as of my last update in 2023 include..."
+
+*This is invalid because the agent relied on its training data date instead of checking the current system time before providing time-sensitive information.*
+</example> 

@@ -1,48 +1,67 @@
-import Link from "next/link";
+import { Metadata } from "next";
+import SubscriptionTiers from "@/components/SubscriptionTiers";
+import FileUpload from "@/components/FileUpload";
+import { auth } from "@/lib/firebase/firebase";
+import { Toaster } from "sonner";
+
+export const metadata: Metadata = {
+  title: "PDF2MD - Convert PDFs to Markdown",
+  description: "Convert PDF documents to Markdown with image extraction and formatting",
+};
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-8">
-      <div>
-        <h2 className="text-2xl font-semibold text-center border p-4 font-mono rounded-md">
-          Get started by choosing a template path from the /paths/ folder.
+    <main className="container max-w-6xl mx-auto py-10 px-4">
+      <Toaster position="top-right" />
+      
+      <section className="text-center mb-12">
+        <h1 className="text-4xl md:text-5xl font-bold mb-4">
+          Convert PDF to Markdown
+        </h1>
+        <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+          Transform your PDF documents into clean, well-formatted Markdown with image extraction 
+          for easy integration with note-taking apps like Obsidian.
+        </p>
+      </section>
+      
+      <section className="mb-16">
+        <h2 className="text-3xl font-bold mb-8 text-center">
+          Choose Your Plan
         </h2>
-      </div>
-      <div>
-        <h1 className="text-6xl font-bold text-center">Make anything you imagine 🪄</h1>
-        <h2 className="text-2xl text-center font-light text-gray-500 pt-4">
-          This whole page will be replaced when you run your template path.
-        </h2>
-      </div>
-      <div className="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="border rounded-lg p-6 hover:bg-gray-100 transition-colors">
-          <h3 className="text-xl font-semibold">AI Chat App</h3>
-          <p className="mt-2 text-sm text-gray-600">
-            An intelligent conversational app powered by AI models, featuring real-time responses
-            and seamless integration with Next.js and various AI providers.
+        <SubscriptionTiers />
+      </section>
+      
+      <section className="border rounded-xl p-8 bg-card mb-10">
+        <h2 className="text-2xl font-bold mb-6">Upload Your PDF</h2>
+        <FileUpload />
+      </section>
+      
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div className="border rounded-lg p-6">
+          <h3 className="text-xl font-semibold mb-2">High Quality Conversion</h3>
+          <p className="text-muted-foreground">
+            Our AI-powered OCR extracts text and images with high accuracy, preserving the original document structure.
           </p>
         </div>
-        <div className="border rounded-lg p-6 hover:bg-gray-100 transition-colors">
-          <h3 className="text-xl font-semibold">AI Image Generation App</h3>
-          <p className="mt-2 text-sm text-gray-600">
-            Create images from text prompts using AI, powered by the Replicate API and Next.js.
+        
+        <div className="border rounded-lg p-6">
+          <h3 className="text-xl font-semibold mb-2">Image Extraction</h3>
+          <p className="text-muted-foreground">
+            Automatically extract and include images from your PDFs in the converted Markdown file.
           </p>
         </div>
-        <div className="border rounded-lg p-6 hover:bg-gray-100 transition-colors">
-          <h3 className="text-xl font-semibold">Social Media App</h3>
-          <p className="mt-2 text-sm text-gray-600">
-            A feature-rich social platform with user profiles, posts, and interactions using
-            Firebase and Next.js.
+        
+        <div className="border rounded-lg p-6">
+          <h3 className="text-xl font-semibold mb-2">Obsidian Compatible</h3>
+          <p className="text-muted-foreground">
+            Get Markdown files optimized for Obsidian with proper formatting and image references.
           </p>
         </div>
-        <div className="border rounded-lg p-6 hover:bg-gray-100 transition-colors">
-          <h3 className="text-xl font-semibold">Voice Notes App</h3>
-          <p className="mt-2 text-sm text-gray-600">
-            A voice-based note-taking app with real-time transcription using Deepgram API, 
-            Firebase integration for storage, and a clean, simple interface built with Next.js.
-          </p>
-        </div>
-      </div>
+      </section>
+      
+      <footer className="text-center text-sm text-muted-foreground pt-8 border-t">
+        <p>© {new Date().getFullYear()} PDF2MD. All rights reserved.</p>
+      </footer>
     </main>
   );
 }
