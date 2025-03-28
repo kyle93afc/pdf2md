@@ -34,7 +34,9 @@ export async function uploadFileStorage(
   options?: StorageOptions
 ): Promise<Result<{ path: string; url: string }>> {
   try {
-    const storageRef = ref(storage, `${bucket}/${path}`);
+    // Ensure path doesn't include bucket name to avoid duplication
+    const cleanPath = path.startsWith(bucket) ? path.substring(bucket.length + 1) : path;
+    const storageRef = ref(storage, `${bucket}/${cleanPath}`);
     const contentType = options?.contentType || file.type || "application/octet-stream";
     
     const uploadResult = await uploadBytes(storageRef, file, {
@@ -48,7 +50,7 @@ export async function uploadFileStorage(
       isSuccess: true,
       message: "File uploaded successfully",
       data: {
-        path: `${bucket}/${path}`,
+        path: cleanPath, // Return just the clean path to avoid duplication issues
         url
       }
     };
@@ -71,7 +73,9 @@ export async function uploadBase64Storage(
   options?: StorageOptions
 ): Promise<Result<{ path: string; url: string }>> {
   try {
-    const storageRef = ref(storage, `${bucket}/${path}`);
+    // Ensure path doesn't include bucket name to avoid duplication
+    const cleanPath = path.startsWith(bucket) ? path.substring(bucket.length + 1) : path;
+    const storageRef = ref(storage, `${bucket}/${cleanPath}`);
     
     // Handle data URLs
     let format: StringFormat = "base64";
@@ -97,7 +101,7 @@ export async function uploadBase64Storage(
       isSuccess: true,
       message: "File uploaded successfully",
       data: {
-        path: `${bucket}/${path}`,
+        path: cleanPath, // Return just the clean path to avoid duplication issues
         url
       }
     };
@@ -143,7 +147,9 @@ export async function createSignedUrlStorage(
   path: string
 ): Promise<Result<{ signedUrl: string }>> {
   try {
-    const storageRef = ref(storage, `${bucket}/${path}`);
+    // Ensure path doesn't include bucket name to avoid duplication
+    const cleanPath = path.startsWith(bucket) ? path.substring(bucket.length + 1) : path;
+    const storageRef = ref(storage, `${bucket}/${cleanPath}`);
     const url = await getDownloadURL(storageRef);
     
     return {
@@ -170,9 +176,9 @@ export async function deleteFileStorage(
   path: string
 ): Promise<Result<void>> {
   try {
-    // Handle both formats: with bucket and without
-    const fullPath = path.includes(bucket) ? path : `${bucket}/${path}`;
-    const storageRef = ref(storage, fullPath);
+    // Ensure consistent path handling
+    const cleanPath = path.startsWith(bucket) ? path : `${bucket}/${path}`;
+    const storageRef = ref(storage, cleanPath);
     
     await deleteObject(storageRef);
     

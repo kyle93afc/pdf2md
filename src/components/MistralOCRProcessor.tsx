@@ -611,7 +611,7 @@ date: ${date}
     try {
       setLoading(true);
 
-      // Upload the file
+      // Upload the file - Fix: Remove bucket name from the path since it's already added in the function
       const uploadResult = await uploadFileStorage(
         STORAGE_BUCKETS.PDF_UPLOADS,
         `temp/${file.name}`,
@@ -619,19 +619,19 @@ date: ${date}
         { upsert: true }
       );
 
-      if (!uploadResult.isSuccess) {
+      if (!uploadResult.isSuccess || !uploadResult.data) {
         throw new Error(uploadResult.message);
       }
 
       setUploadedPath(uploadResult.data.path);
 
-      // Get a signed URL
+      // Get a signed URL - use the corrected path
       const urlResult = await createSignedUrlStorage(
         STORAGE_BUCKETS.PDF_UPLOADS,
         uploadResult.data.path
       );
 
-      if (!urlResult.isSuccess) {
+      if (!urlResult.isSuccess || !urlResult.data) {
         throw new Error("Failed to get file URL");
       }
 
@@ -640,8 +640,8 @@ date: ${date}
         urlResult.data.signedUrl
       );
 
-      if (!response.isSuccess) {
-        throw new Error(response.message);
+      if (!response.isSuccess || !response.data) {
+        throw new Error(response.message || "Failed to process PDF");
       }
 
       // Detect MIME types and store extracted images
@@ -687,11 +687,16 @@ date: ${date}
       setMarkdown(mdContent);
       onComplete(mdContent);
 
-      // Clean up the temporary file
-      await deleteFileStorage(
-        STORAGE_BUCKETS.PDF_UPLOADS,
-        uploadResult.data.path
-      );
+      // Clean up the temporary file (only attempt if upload was successful)
+      try {
+        await deleteFileStorage(
+          STORAGE_BUCKETS.PDF_UPLOADS,
+          uploadResult.data.path
+        );
+      } catch (deleteError) {
+        console.warn("Could not delete temporary file:", deleteError);
+        // Non-critical error, don't rethrow
+      }
     } catch (error) {
       console.error("Error processing file:", error);
       onError(error instanceof Error ? error.message : "Failed to process file");
@@ -704,9 +709,8 @@ date: ${date}
   useEffect(() => {
     return () => {
       if (uploadedPath) {
-        deleteFileStorage(STORAGE_BUCKETS.PDF_UPLOADS, uploadedPath).catch(
-          console.error
-        );
+        deleteFileStorage(STORAGE_BUCKETS.PDF_UPLOADS, uploadedPath)
+          .catch(err => console.warn("Error during cleanup:", err));
       }
     };
   }, [uploadedPath]);
