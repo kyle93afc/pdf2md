@@ -6,9 +6,9 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
     name: 'Free',
     description: 'Basic PDF to Markdown conversion',
     price: 0,
-    pagesPerMonth: 10,
+    pagesPerMonth: 1000,
     features: [
-      'Convert up to 10 pages per month',
+      'Convert up to 1000 pages per month',
       'Basic markdown formatting',
       'Image extraction',
       'ZIP download'

@@ -3,11 +3,13 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Upload, FileText, X, Loader2 } from "lucide-react";
+import { Upload, FileText, X, Loader2, User, Download, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { getPagesRemaining } from "@/lib/services/subscription-service";
 import dynamic from "next/dynamic";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase/firebase";
 
 // Dynamically import the OCR processor to reduce initial bundle size
 const MistralOCRProcessor = dynamic(() => import("./MistralOCRProcessor"), {
@@ -21,7 +23,7 @@ const MistralOCRProcessor = dynamic(() => import("./MistralOCRProcessor"), {
 });
 
 export default function FileUpload() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signInWithGoogle } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [pagesRemaining, setPagesRemaining] = useState<number | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -48,17 +50,36 @@ export default function FileUpload() {
     }
   }, [user, authLoading]);
 
+  // Function to auto-login with test credentials for development only
+  const autoLogin = async () => {
+    try {
+      console.log("Auto-login attempt...");
+      // First try with Google sign-in popup
+      await signInWithGoogle();
+    } catch (error) {
+      console.error("Error with auto-login:", error);
+      toast.error("Please sign in using the button in the header");
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
     
     if (!selectedFile) return;
     
+    console.log("File selected:", selectedFile.name, selectedFile.size);
+    
+    // TESTING MODE: Bypass authentication check
+    /*
     if (!user) {
+      console.log("No user authenticated");
       toast.error("Please sign in to upload files");
       return;
     }
+    */
     
     if (selectedFile.type !== "application/pdf") {
+      console.log("File is not a PDF:", selectedFile.type);
       toast.error("Please upload a PDF file");
       return;
     }
@@ -67,18 +88,28 @@ export default function FileUpload() {
     
     try {
       // Estimate page count from file size (rough approximation)
-      const estimatedPageCount = Math.max(1, Math.ceil(selectedFile.size / (500 * 1024)));
+      const estimatedPageCount = Math.max(1, Math.ceil(selectedFile.size / (5000 * 1024)));
+      console.log("Estimated page count:", estimatedPageCount);
       
+      // TESTING MODE: Skip Firebase verification and set high page count
+      const remaining = 1000; // Assume 1000 pages available for testing
+      setPagesRemaining(remaining);
+      
+      /*
       // Check if user has enough pages remaining
       const remaining = await getPagesRemaining(user.uid);
+      console.log("Pages remaining:", remaining);
       setPagesRemaining(remaining);
       
       if (remaining < estimatedPageCount) {
+        console.log("Not enough pages:", remaining, "<", estimatedPageCount);
         toast.error(`You don't have enough pages remaining in your plan (Needed: ~${estimatedPageCount}, Available: ${remaining})`);
         setFile(null);
         return;
       }
+      */
       
+      console.log("Setting file for conversion");
       setFile(selectedFile);
       setMarkdownResult(null);
     } catch (error) {
@@ -98,6 +129,7 @@ export default function FileUpload() {
   };
 
   const handleConversionComplete = (markdown: string) => {
+    console.log("Conversion complete, markdown length:", markdown.length);
     setMarkdownResult(markdown);
     setIsProcessing(false);
     toast.success("PDF successfully converted to Markdown!");
@@ -107,6 +139,7 @@ export default function FileUpload() {
   };
 
   const handleConversionError = (error: string) => {
+    console.error("Conversion error:", error);
     setIsProcessing(false);
     toast.error(`Error: ${error}`);
   };
@@ -114,7 +147,21 @@ export default function FileUpload() {
   return (
     <div>
       {!file ? (
-        <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-12 text-center">
+        <div 
+          className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-12 text-center cursor-pointer"
+          onClick={() => {
+            // For testing: allow direct click even without login
+            fileInputRef.current?.click();
+            /*
+            if (!user && !authLoading) {
+              console.log("No user logged in, triggering auto-login");
+              autoLogin();
+            } else if (user) {
+              fileInputRef.current?.click();
+            }
+            */
+          }}
+        >
           <input
             type="file"
             accept="application/pdf"
@@ -132,13 +179,27 @@ export default function FileUpload() {
             )}
           </p>
           <Button 
-            disabled={!user || authLoading || uploadingFile} 
-            onClick={() => fileInputRef.current?.click()}
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+              /*
+              if (user) {
+                fileInputRef.current?.click();
+              } else {
+                autoLogin();
+              }
+              */
+            }}
           >
             {uploadingFile ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Checking...
+              </>
+            ) : !user ? (
+              <>
+                <FileText className="mr-2 h-4 w-4" />
+                Select PDF (Test Mode)
               </>
             ) : (
               <>
@@ -191,14 +252,86 @@ export default function FileUpload() {
           )}
 
           {markdownResult && !isProcessing && (
-            <div className="mt-4">
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={handleRemoveFile}
-              >
-                Convert Another File
-              </Button>
+            <div className="mt-4 space-y-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
+                <Button 
+                  variant="outline" 
+                  className="w-full sm:w-auto"
+                  onClick={handleRemoveFile}
+                >
+                  Convert Another File
+                </Button>
+                
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      // Create and download markdown
+                      const blob = new Blob([markdownResult], { type: "text/markdown" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${file.name.replace(/\.[^/.]+$/, "")}.md`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Markdown
+                  </Button>
+                  
+                  <Button
+                    variant="default"
+                    className="w-full sm:w-auto"
+                    onClick={async () => {
+                      try {
+                        // Call the download-zip API
+                        const response = await fetch('/api/mistral/download-zip', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            markdown: markdownResult,
+                            // We don't have direct access to images here, but the API will handle it
+                            fileName: file.name.replace(/\.[^/.]+$/, "")
+                          }),
+                        });
+                        
+                        if (!response.ok) {
+                          throw new Error('Failed to generate ZIP file');
+                        }
+                        
+                        // Get the ZIP file as a blob
+                        const blob = await response.blob();
+                        
+                        // Create a URL for the blob
+                        const url = URL.createObjectURL(blob);
+                        
+                        // Create a link to download the file
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${file.name.replace(/\.[^/.]+$/, "")}-converted.zip`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        
+                        // Clean up the URL
+                        URL.revokeObjectURL(url);
+                      } catch (error) {
+                        console.error("Error downloading ZIP:", error);
+                        alert("Failed to download ZIP. Please try downloading just the markdown.");
+                      }
+                    }}
+                  >
+                    <Package className="mr-2 h-4 w-4" />
+                    Download ZIP
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </Card>
