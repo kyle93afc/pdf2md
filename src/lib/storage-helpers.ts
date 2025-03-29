@@ -176,9 +176,9 @@ export async function deleteFileStorage(
   path: string
 ): Promise<Result<void>> {
   try {
-    // Ensure consistent path handling
-    const cleanPath = path.startsWith(bucket) ? path : `${bucket}/${path}`;
-    const storageRef = ref(storage, cleanPath);
+    // Ensure path doesn't include bucket name to avoid duplication
+    const cleanPath = path.startsWith(bucket) ? path.substring(bucket.length + 1) : path;
+    const storageRef = ref(storage, `${bucket}/${cleanPath}`);
     
     await deleteObject(storageRef);
     

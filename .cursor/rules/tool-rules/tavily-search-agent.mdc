@@ -1,0 +1,47 @@
+---
+description: When conducting deep research or time-sensitive information searches, ensures use of current system time for accurate context
+globs: 
+alwaysApply: false
+---
+
+# Tavily Search Time Context Rule
+
+## Context
+
+- Apply when performing deep research or searching for time-sensitive information
+- Ensures searches are contextualized with the actual current date/time, not the AI's training cutoff
+- Prevents confusion with outdated information when searching for current events or topics
+
+## Critical Rules
+
+- Always run the system's date command to get the current date and time before using Tavily search
+- Include the current date/time in the search query or context to ensure time-relevant results
+- Never rely on your training data cutoff date as the reference point for "current" information
+- For time-sensitive searches, explicitly mention the current date in your search queries
+- When presenting search results, acknowledge the current date as the reference point
+- Always apply these rules for news searches or any query about "latest", "current", or "recent" topics
+
+## Examples
+
+<example>
+User: "Research the latest advancements in quantum computing"
+
+Action: First get current system date
+```bash
+date
+# Returns: Sun May 12 14:23:37 EDT 2025
+```
+
+Tavily search: "latest advancements in quantum computing as of May 2025"
+
+Response: "Based on the current date (May 12, 2025), the latest quantum computing advancements include..."
+</example>
+
+<example type="invalid">
+User: "What are the current market trends?"
+
+Action: Immediately searching without time context
+Tavily search: "current market trends"
+
+Response: "As of my last update in April 2023, the market trends show..."
+</example> 
