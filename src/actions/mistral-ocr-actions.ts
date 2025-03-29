@@ -110,12 +110,12 @@ export async function processPdfWithMistralAction(
       
       // Replace potential placeholders like ![image](image-0), ![image](0), etc.
       const patterns = [
-        new RegExp(`!\[([^\]]*)\]\(image-${index}\)`, 'g'), // Match ![...](image-N)
-        new RegExp(`!\[([^\]]*)\]\(${index}\)`, 'g'),      // Match ![...](N)
-        new RegExp(`!\[\]\(image-${index}\)`, 'g'),       // Match ![](image-N)
-        new RegExp(`!\[\]\(${index}\)`, 'g'),          // Match ![](N)
-        new RegExp(`!\[([^\]]*)\]\(img-${index}\.[^)]+\)`, 'g'), // Match existing ![...](img-N.ext)
-        new RegExp(`!\[\]\(img-${index}\.[^)]+\)`, 'g')         // Match existing ![](img-N.ext)
+        new RegExp(`!\\[([^\\]]*?)\\]\\(image-${index}\\)`, 'g'), // Match ![...](image-N)
+        new RegExp(`!\\[([^\\]]*?)\\]\\(${index}\\)`, 'g'),      // Match ![...](N)
+        new RegExp(`!\\[\\]\\(image-${index}\\)`, 'g'),       // Match ![](image-N)
+        new RegExp(`!\\[\\]\\(${index}\\)`, 'g'),          // Match ![](N)
+        new RegExp(`!\\[([^\\]]*?)\\]\\(img-${index}\\.[^)]+\\)`, 'g'), // Match existing ![...](img-N.ext)
+        new RegExp(`!\\[\\]\\(img-${index}\\.[^)]+\\)`, 'g')         // Match existing ![](img-N.ext)
       ];
       
       const replacement = `![Image ${index + 1}](${filename})`;
