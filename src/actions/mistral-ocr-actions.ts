@@ -1,6 +1,9 @@
 'use server';
 
 import axios from 'axios';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import { mimeTypeToExtension } from "@/lib/utils";
 
 type Result<T> = {
   isSuccess: boolean;
@@ -51,6 +54,12 @@ export async function processPdfWithMistralAction(
     );
 
     console.log("Server Action: Mistral API response status:", response.status);
+    console.log("Server Action: Response data structure:", JSON.stringify({
+      hasPages: !!response.data?.pages,
+      pageCount: response.data?.pages?.length,
+      firstPageKeys: response.data?.pages?.[0] ? Object.keys(response.data.pages[0]) : [],
+      firstPageImageKeys: response.data?.pages?.[0]?.images?.[0] ? Object.keys(response.data.pages[0].images[0]) : []
+    }, null, 2));
 
     if (!response.data || !response.data.pages) {
        console.error("Server Action: Invalid response data from Mistral API:", response.data);
@@ -63,16 +72,28 @@ export async function processPdfWithMistralAction(
     let imageIndex = 0;
 
     // Process each page from the response
-    response.data.pages.forEach((page: any) => {
+    response.data.pages.forEach((page: any, pageIndex: number) => {
       // Add page text
       combinedText += (combinedText ? '\n\n' : '') + page.markdown;
 
       // Process images from the page
       if (page.images && Array.isArray(page.images)) {
+        console.log(`Server Action: Processing page ${pageIndex} images:`, {
+          imageCount: page.images.length,
+          sampleImage: page.images[0] ? {
+            hasBase64: !!page.images[0].base64,
+            hasContent: !!page.images[0].content,
+            keys: Object.keys(page.images[0])
+          } : null
+        });
+
         page.images.forEach((img: any) => {
-          let base64Data = img.base64 || '';
+          // Try all possible base64 field names from the Mistral API
+          let base64Data = img.image_base64 || img.base64 || img.content || '';
+          console.log(`Server Action: Image ${imageIndex} base64 length:`, base64Data?.length || 0);
+          
           // Determine mimeType (assuming png if not specified, but Mistral might provide it)
-          let mimeType = img.mime_type || 'image/png'; // Check if API provides mime_type
+          let mimeType = img.mime_type || img.mimeType || 'image/png'; // Check both field names
 
           // Ensure base64 data doesn't have data URI prefix from API (if it adds one)
           if (base64Data.startsWith('data:')) {
@@ -83,12 +104,17 @@ export async function processPdfWithMistralAction(
               }
           }
           
-          // Store raw base64 and detected mimeType
-          processedImages.push({
-            base64: base64Data, // Store raw base64
-            index: imageIndex++,
-            mimeType
-          });
+          // Only add image if we have base64 data
+          if (base64Data && base64Data.length > 0) {
+            console.log(`Server Action: Adding image ${imageIndex} with ${base64Data.length} bytes`);
+            processedImages.push({
+              base64: base64Data, // Store raw base64
+              index: imageIndex++,
+              mimeType
+            });
+          } else {
+            console.warn(`Server Action: Skipping image ${imageIndex} - no base64 data`);
+          }
         });
       }
     });
@@ -102,23 +128,27 @@ export async function processPdfWithMistralAction(
       // Ensure proper spacing between sections
       .replace(/\n{3,}/g, '\n\n');
 
-    // Ensure proper image references (e.g., ![Image N](img-N.ext))
+    // Ensure proper image references (e.g., ![Image N](images/img-N.ext))
     // This part assumes the API might return different placeholder formats
     processedImages.forEach((img, index) => {
       const extension = mimeTypeToExtension(img.mimeType);
-      const filename = `img-${index}.${extension}`;
-      
+      // Use a relative path suitable for zip structure
+      const filename = `images/img-${index}.${extension}`;
+
       // Replace potential placeholders like ![image](image-0), ![image](0), etc.
       const patterns = [
         new RegExp(`!\\[([^\\]]*?)\\]\\(image-${index}\\)`, 'g'), // Match ![...](image-N)
         new RegExp(`!\\[([^\\]]*?)\\]\\(${index}\\)`, 'g'),      // Match ![...](N)
         new RegExp(`!\\[\\]\\(image-${index}\\)`, 'g'),       // Match ![](image-N)
         new RegExp(`!\\[\\]\\(${index}\\)`, 'g'),          // Match ![](N)
+        // Update patterns to match potential variations including the new 'images/' prefix or old 'img-' prefix
         new RegExp(`!\\[([^\\]]*?)\\]\\(img-${index}\\.[^)]+\\)`, 'g'), // Match existing ![...](img-N.ext)
-        new RegExp(`!\\[\\]\\(img-${index}\\.[^)]+\\)`, 'g')         // Match existing ![](img-N.ext)
+        new RegExp(`!\\[\\]\\(img-${index}\\.[^)]+\\)`, 'g'),         // Match existing ![](img-N.ext)
+        new RegExp(`!\\[([^\\]]*?)\\]\\(images/img-${index}\\.[^)]+\\)`, 'g'), // Match existing ![...](images/img-N.ext)
+        new RegExp(`!\\[\\]\\(images/img-${index}\\.[^)]+\\)`, 'g')         // Match existing ![](images/img-N.ext)
       ];
-      
-      const replacement = `![Image ${index + 1}](${filename})`;
+
+      const replacement = `![Image ${index + 1}](${filename})`; // Use the new filename with 'images/' prefix
 
       patterns.forEach(pattern => {
         cleanedText = cleanedText.replace(pattern, replacement);
@@ -164,19 +194,4 @@ export async function processPdfWithMistralAction(
       message: error instanceof Error ? error.message : 'An unknown server error occurred while processing with Mistral AI'
     };
   }
-}
-
-// Helper function to get extension from mime type
-function mimeTypeToExtension(mimeType: string): string {
-    const mimeMap: Record<string, string> = {
-        'image/png': 'png',
-        'image/jpeg': 'jpg',
-        'image/jpg': 'jpg',
-        'image/gif': 'gif',
-        'image/webp': 'webp',
-        'image/bmp': 'bmp',
-        'image/tiff': 'tiff',
-    };
-    const simpleMime = mimeType.split(';')[0];
-    return mimeMap[simpleMime] || 'png'; // Default to png
 } 

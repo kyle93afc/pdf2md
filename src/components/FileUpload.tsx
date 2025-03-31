@@ -29,6 +29,7 @@ export default function FileUpload() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [markdownResult, setMarkdownResult] = useState<string | null>(null);
+  const [extractedImages, setExtractedImages] = useState<{ base64: string; index: number; mimeType: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchUserSubscriptionDetails = async () => {
@@ -128,9 +129,10 @@ export default function FileUpload() {
     }
   };
 
-  const handleConversionComplete = (markdown: string) => {
-    console.log("Conversion complete, markdown length:", markdown.length);
+  const handleConversionComplete = (markdown: string, images: { base64: string; index: number; mimeType: string }[]) => {
+    console.log("Conversion complete, markdown length:", markdown.length, "images:", images.length);
     setMarkdownResult(markdown);
+    setExtractedImages(images);
     setIsProcessing(false);
     toast.success("PDF successfully converted to Markdown!");
     
@@ -288,6 +290,7 @@ export default function FileUpload() {
                     className="w-full sm:w-auto"
                     onClick={async () => {
                       try {
+                        console.log("Starting ZIP download, images count:", extractedImages.length);
                         // Call the download-zip API
                         const response = await fetch('/api/mistral/download-zip', {
                           method: 'POST',
@@ -296,13 +299,14 @@ export default function FileUpload() {
                           },
                           body: JSON.stringify({
                             markdown: markdownResult,
-                            // We don't have direct access to images here, but the API will handle it
+                            images: extractedImages,
                             fileName: file.name.replace(/\.[^/.]+$/, "")
                           }),
                         });
                         
                         if (!response.ok) {
-                          throw new Error('Failed to generate ZIP file');
+                          const errorData = await response.json();
+                          throw new Error(errorData.error || 'Failed to generate ZIP file');
                         }
                         
                         // Get the ZIP file as a blob

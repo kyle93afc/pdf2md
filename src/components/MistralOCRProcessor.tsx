@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { OCRProcessorProps } from "@/types/ocr-types";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,10 +46,12 @@ export default function MistralOCRProcessor({
 }: OCRProcessorProps) {
   const [markdown, setMarkdown] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [uploadedPath, setUploadedPath] = useState<string>(""); // State for temp file path
+  const [uploadedPath, setUploadedPath] = useState<string>("");
   const [extractedImages, setExtractedImages] = useState<
     { base64: string; index: number; mimeType: string }[]
   >([]);
+  const processingStartedRef = useRef(false);
+  const currentFileRef = useRef<File | null>(null);
 
   // Download raw markdown as received from the server action
   const handleDownloadMarkdown = () => {
@@ -224,7 +226,7 @@ export default function MistralOCRProcessor({
       console.log("Client: Set markdown and image state.");
 
       // 5. Call the onComplete callback
-      onComplete(response.data.text);
+      onComplete(response.data.text, response.data.images);
 
     } catch (error) {
       console.error("Client: Error processing file:", error);
@@ -250,25 +252,47 @@ export default function MistralOCRProcessor({
     }
   };
 
-  // Effect to handle processing when file prop changes
+  // useEffect to trigger processing when the file prop changes
   useEffect(() => {
-    if (file) {
-      console.log("Client: File prop detected. Starting processing.");
-      processFile();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file]);
+    if (file && file !== currentFileRef.current) {
+      console.log("Client: New file prop detected. Resetting and starting processing.");
+      currentFileRef.current = file; // Update the current file ref
+      processingStartedRef.current = false; // Reset processing flag for the new file
 
-  // Effect to handle cleanup on unmount if processing was interrupted
-  useEffect(() => {
-    return () => {
-      if (uploadedPath) {
-        console.log(`Client: Unmounting component. Attempting cleanup for ${uploadedPath}...`);
-        deleteFileStorage(STORAGE_BUCKETS.PDF_UPLOADS, uploadedPath)
-          .catch(console.error);
+      if (!processingStartedRef.current) {
+        processingStartedRef.current = true; // Set flag to true
+        processFile().catch((err) => {
+            console.error("Client: Unhandled error in processFile execution:", err);
+            onError(err instanceof Error ? err.message : "Unknown error during processing start");
+            processingStartedRef.current = false; // Reset flag on error
+        });
       }
+    } else if (!file) {
+        console.log("Client: File prop removed or became null.");
+        currentFileRef.current = null;
+        processingStartedRef.current = false;
+        setMarkdown("");
+        setExtractedImages([]);
+        setUploadedPath("");
+        setLoading(false);
+    }
+
+    return () => {
+      console.log("Client: MistralOCRProcessor effect cleanup running.");
     };
-  }, [uploadedPath]);
+  }, [file, onComplete, onError]);
+
+  // Separate useEffect for cleaning up the temp file on unmount if path exists
+   useEffect(() => {
+     const pathToDelete = uploadedPath;
+     return () => {
+       if (pathToDelete) {
+         console.log(`Client Unmount Cleanup: Deleting temp file ${pathToDelete}...`);
+         deleteFileStorage(STORAGE_BUCKETS.PDF_UPLOADS, pathToDelete)
+           .catch(console.error);
+       }
+     };
+   }, [uploadedPath]);
 
   if (loading) {
     return (
