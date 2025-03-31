@@ -1,9 +1,12 @@
 "use client";
 
+import React from 'react';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import remarkWikilinks from "@/lib/remarkWikilinks";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vs } from "react-syntax-highlighter/dist/esm/styles/prism";
 import "katex/dist/katex.min.css"; // Ensure KaTeX CSS is imported
@@ -20,47 +23,29 @@ export default function ObsidianMarkdownPreview({
   // Replace image references in the markdown with blob URLs for preview
   let previewContent = content;
 
-  console.log(
-    "ObsidianMarkdownPreview: Received image blob URLs:",
-    imageBlobUrls
-  );
+  console.log("Processing markdown content:", {
+    originalContent: content.substring(0, 100) + "...",
+    imageUrls: imageBlobUrls
+  });
 
   Object.entries(imageBlobUrls).forEach(([filename, url]) => {
     // Escape filename for use in regex
     const escapedFilename = filename.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&"); 
-    // Regex to match ![alt text](filename)
-    // Corrected escaping for parens: \( and \)
+    // Regex to match ![alt text](filename) - make it more lenient
     const pattern = new RegExp(
-      `(!\\[[^\\]]*\\]\\\()(${escapedFilename})(\\\))`,
+      `!\\[[^\\]]*\\]\\(${escapedFilename}\\)`,
       "g"
     );
-    const initialLength = previewContent.length;
-    previewContent = previewContent.replace(pattern, `$1${url}$3`);
-    if (previewContent.length !== initialLength) {
-      console.log(`ObsidianMarkdownPreview: Replaced ${filename} with blob URL.`);
-    } else {
-      console.log(
-        `ObsidianMarkdownPreview: Pattern for ${filename} not found or already replaced.`
-      );
-    }
+    const replacement = `![](${url})`;
+    previewContent = previewContent.replace(pattern, replacement);
+    console.log(`Replacing image reference:`, {
+      filename,
+      pattern: pattern.toString(),
+      replacement
+    });
   });
 
-  // Add support for Obsidian-style wikilinks [[Link]] or [[Link|Text]]
-  previewContent = previewContent.replace(
-    /\\[\\[([^\\]\\|]+)(?:\\|([^\\]]+))?\\]\\]/g,
-    (match, page, text) => {
-      const displayText = text || page;
-      return `<span class="obsidian-wikilink">${displayText}</span>`;
-    }
-  );
-
-  // Add support for Obsidian-style tags
-  previewContent = previewContent.replace(
-    /(^|\\s)#([a-zA-Z0-9_\\-\\/]+)/g,
-    (match, prefix, tag) => {
-      return `${prefix}<span class="obsidian-tag">#${tag}</span>`;
-    }
-  );
+  console.log("Final content:", previewContent.substring(0, 100) + "...");
 
   // Custom components for ReactMarkdown
   const components = {
@@ -72,7 +57,6 @@ export default function ObsidianMarkdownPreview({
           style={vs}
           language={match[1]}
           PreTag="div"
-          wrapLines={true}
           className="obsidian-code-block"
         >
           {String(children).replace(/\\n$/, "")}
@@ -83,80 +67,50 @@ export default function ObsidianMarkdownPreview({
         </code>
       );
     },
-    img({ node, ...props }: any) {
-      if (!props.src) {
-        console.warn("Rendering img tag with no src:", props);
+    img({ src, alt, ...props }: any) {
+      console.log("Rendering image:", { src, alt });
+      if (!src) {
+        console.warn("Image with no src:", { alt, props });
         return null;
       }
-      const isBlobUrl = props.src.startsWith("blob:");
-      if (!isBlobUrl) {
-        console.warn("Rendering img tag with non-blob src:", props.src);
-        // Optionally return placeholder
-      }
       return (
-        <img {...props} className="obsidian-image" alt={props.alt || ""} />
-      );
-    },
-    a({ node, ...props }: any) {
-      return (
-        <a
+        <img 
+          src={src} 
+          alt={alt || ""} 
+          className="obsidian-image" 
           {...props}
-          className="obsidian-link"
-          target="_blank"
-          rel="noopener noreferrer"
+          onError={(e) => {
+            console.error("Image failed to load:", {
+              src,
+              alt,
+              error: e
+            });
+          }}
         />
       );
     },
-    blockquote({ node, ...props }: any) {
-      return <blockquote {...props} className="obsidian-blockquote" />;
-    },
-    table({ node, ...props }: any) {
-      return <table {...props} className="obsidian-table" />;
-    },
-    li({ node, children, className, ...props }: any) {
-      const taskListItem = className?.includes("task-list-item");
+    a({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) {
+      // Check if this is a wikilink (no http/https protocol)
+      const isWikilink = href && !href.startsWith('http') && !href.startsWith('https');
       return (
-        <li {...props} className={className}>
-          {taskListItem ? (
-            <span className="obsidian-task-list-item">{children}</span>
-          ) : (
-            children
-          )}
-        </li>
+        <a
+          {...props}
+          href={href}
+          className={`${isWikilink ? 'obsidian-wikilink' : 'obsidian-link'}`}
+          target={isWikilink ? '_self' : '_blank'}
+          rel={isWikilink ? '' : 'noopener noreferrer'}
+        >
+          {children}
+        </a>
       );
-    },
-    input({ node, ...props }: any) {
-      if (props.type === "checkbox") {
-        return <input {...props} disabled={true} />;
-      }
-      return <input {...props} />;
-    },
-    // Need to render the raw HTML spans for wikilinks/tags
-    span({ node, children, className, ...props }: any) {
-      if (
-        className === "obsidian-wikilink" ||
-        className === "obsidian-tag"
-      ) {
-        // Directly render the children which should be the text content
-        // The component itself handles the span tag.
-        // This might require rehype-raw if ReactMarkdown escapes it.
-        // Alternatively, return React.createElement('span', {className, ...props}, children)
-        // For simplicity, let's assume ReactMarkdown handles basic spans or use rehype-raw
-        // Let's try rendering the span directly:
-        return <span className={className} {...props}>{children}</span>;
-      }
-      // Default span rendering if needed for other cases
-      return <span {...props}>{children}</span>;
     },
   };
 
   return (
     <div className="obsidian-preview">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]} // Keep rehypeKatex for math
-        // Potentially add rehype-raw if HTML spans don't render correctly
-        // rehypePlugins={[rehypeKatex, rehypeRaw]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkWikilinks]}
+        rehypePlugins={[rehypeKatex, rehypeRaw]}
         components={components}
       >
         {previewContent}
@@ -200,6 +154,7 @@ export default function ObsidianMarkdownPreview({
 
         .obsidian-image {
           max-width: 100%;
+          height: auto;
           display: block;
           margin: 1em 0;
           border-radius: 4px;
@@ -211,7 +166,12 @@ export default function ObsidianMarkdownPreview({
           text-decoration: none;
           border-bottom: 1px dashed var(--primary);
           padding-bottom: 1px;
-          cursor: default;
+          cursor: pointer;
+        }
+
+        .obsidian-wikilink:hover {
+          text-decoration: none;
+          border-bottom-style: solid;
         }
 
         .obsidian-tag {

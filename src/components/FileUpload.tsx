@@ -10,6 +10,8 @@ import { getPagesRemaining } from "@/lib/services/subscription-service";
 import dynamic from "next/dynamic";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase/firebase";
+import ObsidianMarkdownPreview from "./ObsidianMarkdownPreview";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Dynamically import the OCR processor to reduce initial bundle size
 const MistralOCRProcessor = dynamic(() => import("./MistralOCRProcessor"), {
@@ -21,6 +23,23 @@ const MistralOCRProcessor = dynamic(() => import("./MistralOCRProcessor"), {
   ),
   ssr: false,
 });
+
+// Helper to get file extension from MIME type
+const getExtensionFromMime = (mimeType: string): string => {
+  const mimeToExt: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/bmp": "bmp",
+    "image/tiff": "tiff"
+  };
+
+  // Handle potential complex mime types like 'image/png;charset=utf-8'
+  const simpleMime = mimeType.split(';')[0];
+  return mimeToExt[simpleMime] || "png"; // Default to png if unknown
+};
 
 export default function FileUpload() {
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
@@ -254,25 +273,17 @@ export default function FileUpload() {
           )}
 
           {markdownResult && !isProcessing && (
-            <div className="mt-4 space-y-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
-                <Button 
-                  variant="outline" 
-                  className="w-full sm:w-auto"
-                  onClick={handleRemoveFile}
-                >
-                  Convert Another File
-                </Button>
-                
+            <div className="mt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium">Preview</h3>
                 <div className="flex gap-2">
                   <Button
-                    variant="secondary"
-                    className="w-full sm:w-auto"
+                    variant="outline"
                     onClick={() => {
-                      // Create and download markdown
-                      const blob = new Blob([markdownResult], { type: "text/markdown" });
+                      // Create a blob and download it
+                      const blob = new Blob([markdownResult], { type: 'text/markdown' });
                       const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
+                      const a = document.createElement('a');
                       a.href = url;
                       a.download = `${file.name.replace(/\.[^/.]+$/, "")}.md`;
                       document.body.appendChild(a);
@@ -284,10 +295,8 @@ export default function FileUpload() {
                     <Download className="mr-2 h-4 w-4" />
                     Download Markdown
                   </Button>
-                  
                   <Button
                     variant="default"
-                    className="w-full sm:w-auto"
                     onClick={async () => {
                       try {
                         console.log("Starting ZIP download, images count:", extractedImages.length);
@@ -336,6 +345,20 @@ export default function FileUpload() {
                   </Button>
                 </div>
               </div>
+              
+              <Card className="mt-4">
+                <ScrollArea className="h-[500px] w-full rounded-md border p-4">
+                  <ObsidianMarkdownPreview
+                    content={markdownResult}
+                    imageBlobUrls={Object.fromEntries(
+                      extractedImages.map((img, index) => [
+                        `images/img-${index}.${getExtensionFromMime(img.mimeType)}`,
+                        `data:${img.mimeType};base64,${img.base64}`
+                      ])
+                    )}
+                  />
+                </ScrollArea>
+              </Card>
             </div>
           )}
         </Card>
