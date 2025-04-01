@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "stripe:setup": "ts-node scripts/setup-stripe-products.ts"
+    "stripe:setup": "ts-node scripts/setup-stripe-products.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:rules": "firebase emulators:exec \"jest src/lib/tests/firestore-rules.test.ts\""
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.48",
@@ -27,6 +30,7 @@
     "dotenv": "^16.4.7",
     "file-saver": "^2.0.5",
     "firebase": "^10.14.1",
+    "firebase-admin": "^13.2.0",
     "framer-motion": "^11.3.31",
     "jszip": "^3.10.1",
     "lucide-react": "^0.436.0",
@@ -49,7 +53,10 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "@jest/globals": "^29.7.0",
     "@types/file-saver": "^2.0.7",
+    "@types/jest": "^29.5.14",
     "@types/jszip": "^3.4.0",
     "@types/node": "^20",
     "@types/react": "^18",
@@ -58,8 +65,10 @@
     "@types/unist": "^3.0.3",
     "eslint": "^8",
     "eslint-config-next": "14.2.7",
+    "jest": "^29.7.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "ts-jest": "^29.3.1",
     "ts-node": "^10.9.2",
     "typescript": "^5"
   }

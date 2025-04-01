@@ -1,22 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { auth } from '@/lib/firebase/firebase';
+import { adminAuth } from '@/lib/firebase/admin';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-02-24.acacia',
 });
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { priceId, credits } = await req.json();
-    const user = auth.currentUser;
-
-    if (!user) {
-      return new NextResponse('Unauthorized', { status: 401 });
+    // 1. Get Authorization header
+    const authorization = req.headers.get('Authorization');
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing or invalid token' }, { status: 401 });
     }
+    const idToken = authorization.split('Bearer ')[1];
+
+    // 2. Verify ID token using Firebase Admin SDK
+    let decodedToken;
+    try {
+      decodedToken = await adminAuth.verifyIdToken(idToken);
+    } catch (error) {
+      console.error('Error verifying Firebase ID token:', error);
+      return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
+    }
+    const userId = decodedToken.uid;
+
+    // 3. Proceed with checkout creation using the verified userId
+    const { priceId, credits } = await req.json();
 
     if (!priceId || !credits) {
-      return new NextResponse('Missing required fields', { status: 400 });
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -29,18 +42,19 @@ export async function POST(req: Request) {
         },
       ],
       metadata: {
-        userId: user.uid,
+        userId: userId,
         credits: credits.toString(),
       },
       success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard?success=true`,
       cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard?canceled=true`,
     });
 
-    return NextResponse.json({ sessionId: session.id });
+    return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error('Error creating checkout session:', error);
-    return new NextResponse(
-      `Error creating checkout session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: `Error creating checkout session: ${errorMessage}` },
       { status: 500 }
     );
   }

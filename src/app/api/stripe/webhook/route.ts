@@ -1,101 +1,83 @@
+import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { stripe, STRIPE_WEBHOOK_SECRET } from '@/lib/stripe/config';
+import { updateUserCredits } from '@/lib/stripe/client';
+import { adminDb } from '@/lib/firebase/admin';
+import { Timestamp } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
-import { db } from '@/lib/firebase/firebase';
-import { doc, runTransaction, collection, addDoc } from 'firebase/firestore';
 
-// Initialize Stripe with your secret key
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-02-24.acacia',
-});
+export async function POST(req: NextRequest) {
+  const body = await req.text();
+  const signature = headers().get('stripe-signature');
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+  if (!signature || !STRIPE_WEBHOOK_SECRET) {
+    return NextResponse.json(
+      { error: 'Missing signature or webhook secret' },
+      { status: 400 }
+    );
+  }
 
-async function updateUserCredits(userId: string, credits: number) {
-  const userRef = doc(db, 'users', userId);
-  
-  await runTransaction(db, async (transaction) => {
-    const userDoc = await transaction.get(userRef);
-    if (!userDoc.exists()) {
-      throw new Error('User not found');
-    }
-
-    const currentCredits = userDoc.data().credits || 0;
-    transaction.update(userRef, {
-      credits: currentCredits + credits,
-      lastUpdated: new Date(),
-    });
-  });
-}
-
-export async function POST(req: Request) {
   try {
-    const body = await req.text();
-    const headersList = headers();
-    const signature = headersList.get('stripe-signature')!;
-
-    // Verify webhook signature
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (err) {
-      console.error('Webhook signature verification failed:', err);
-      return new NextResponse('Webhook signature verification failed', { status: 400 });
-    }
+    const event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      STRIPE_WEBHOOK_SECRET
+    );
 
     // Handle the event
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        const metadata = session.metadata || {};
-        
-        // If this is a test event (no metadata), just log and return success
-        if (!metadata.userId || !metadata.credits) {
-          console.log('Test event received - no metadata present');
-          return new NextResponse('Test event processed', { status: 200 });
+        const metadata = session.metadata;
+
+        if (!metadata?.userId || !metadata?.credits) {
+          throw new Error('Missing required metadata');
         }
 
-        await updateUserCredits(
-          metadata.userId,
-          parseInt(metadata.credits)
-        );
+        // Update user credits
+        await updateUserCredits(metadata.userId, Number(metadata.credits));
 
-        // Create payment history record
-        const paymentRecord = {
+        // Store payment history
+        await adminDb.collection('payment_history').add({
           userId: metadata.userId,
           transactionId: session.id,
-          amount: session.amount_total! / 100, // Convert from cents
-          credits: parseInt(metadata.credits),
+          amount: session.amount_total ? session.amount_total / 100 : 0,
+          credits: Number(metadata.credits),
           status: 'succeeded',
-          createdAt: new Date(),
-        };
+          createdAt: Timestamp.now(),
+        });
 
-        await addDoc(collection(db, 'paymentHistory'), paymentRecord);
-        break;
-      }
-
-      case 'payment_intent.succeeded': {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        console.log('Payment succeeded:', paymentIntent.id);
         break;
       }
 
       case 'payment_intent.payment_failed': {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        console.error('Payment failed:', paymentIntent.id);
+        const metadata = paymentIntent.metadata;
+
+        if (!metadata?.userId) {
+          throw new Error('Missing required metadata');
+        }
+
+        // Store failed payment attempt
+        await adminDb.collection('payment_history').add({
+          userId: metadata.userId,
+          transactionId: paymentIntent.id,
+          amount: paymentIntent.amount ? paymentIntent.amount / 100 : 0,
+          status: 'failed',
+          createdAt: Timestamp.now(),
+        });
+
         break;
       }
 
-      default: {
-        console.log(`Unhandled event type: ${event.type}`);
-      }
+      // Add other event types as needed
     }
 
-    return new NextResponse('Webhook processed successfully', { status: 200 });
+    return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('Webhook error:', error);
-    return new NextResponse(
-      `Webhook handler failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+    console.error('Error handling webhook:', error);
+    return NextResponse.json(
+      { error: 'Webhook handler failed' },
       { status: 400 }
     );
   }

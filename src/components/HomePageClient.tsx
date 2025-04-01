@@ -1,15 +1,13 @@
-import { Metadata } from "next";
-import HomePageClient from "@/components/HomePageClient";
+'use client';
 
-export const metadata: Metadata = {
-  title: "PDF2MD - Convert PDFs to Markdown",
-  description: "Convert PDF documents to Markdown with image extraction and formatting",
-};
+import SubscriptionTiers from "@/components/SubscriptionTiers";
+import FileUpload from "@/components/FileUpload";
+import { Toaster } from "sonner";
 
-export default function Home() {
+export default function HomePageClient() {
   return (
-    <main className="container max-w-6xl mx-auto py-10 px-4">
-      <HomePageClient />
+    <>
+      <Toaster position="top-right" />
       
       <section className="text-center mb-12">
         <h1 className="text-4xl md:text-5xl font-bold mb-4">
@@ -25,10 +23,12 @@ export default function Home() {
         <h2 className="text-3xl font-bold mb-8 text-center">
           Choose Your Plan
         </h2>
+        <SubscriptionTiers />
       </section>
       
       <section className="border rounded-xl p-8 bg-card mb-10">
         <h2 className="text-2xl font-bold mb-6">Upload Your PDF</h2>
+        <FileUpload />
       </section>
       
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
@@ -53,10 +53,6 @@ export default function Home() {
           </p>
         </div>
       </section>
-      
-      <footer className="text-center text-sm text-muted-foreground pt-8 border-t">
-        <p>© {new Date().getFullYear()} PDF2MD. All rights reserved.</p>
-      </footer>
-    </main>
+    </>
   );
-}
+} 

@@ -25,24 +25,24 @@ Story Points: 2 (New feature with external integration)
 1. - [x] ~~Stripe Setup~~
    1. - [x] ~~Set up Stripe account and get API keys~~
    2. - [x] ~~Configure Stripe products and prices for different credit packages~~
-   3. - [ ] Set up webhook endpoints for payment events
+   3. - [x] ~~Set up webhook endpoints for payment events~~
 
-2. - [ ] Backend Implementation
-   1. - [ ] Create Stripe customer creation/management API
-   2. - [ ] Implement webhook handler for payment events
-   3. - [ ] Create API endpoints for:
-      - Checkout session creation
-      - Customer portal session
-      - Credit balance checking
-      - Payment history
-   4. - [ ] Set up credit management system in Firebase
+2. - [x] ~~Backend Implementation~~
+   1. - [x] ~~Create Stripe customer creation/management API~~
+   2. - [x] ~~Implement webhook handler for payment events~~
+   3. - [x] ~~Create API endpoints for:~~
+      - ~~Checkout session creation~~
+      - ~~Customer portal session~~
+      - ~~Credit balance checking~~
+      - ~~Payment history~~
+   4. - [x] ~~Set up credit management system in Firebase~~
 
 3. - [ ] Frontend Implementation
-   1. - [ ] Create PricingPlans component
-   2. - [ ] Implement Stripe Elements integration
-   3. - [ ] Add credit balance display in header/dashboard
-   4. - [ ] Create payment history view
-   5. - [ ] Add subscription management portal access
+   1. - [x] ~~Create PricingPlans component~~
+   2. - [x] ~~Implement Stripe Elements integration~~
+   3. - [x] ~~Add credit balance display in header/dashboard~~
+   4. - [x] ~~Create payment history view~~
+   5. - [x] ~~Add subscription management portal access~~
 
 4. - [ ] Testing
    1. - [ ] Test payment flow with Stripe test cards

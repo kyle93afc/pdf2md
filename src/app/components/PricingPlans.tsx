@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { loadStripe } from '@stripe/stripe-js';

@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useRef } from "react";
 import { Image as ImageIcon, X } from "lucide-react";
 import Image from "next/image";

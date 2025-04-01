@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Menu, X, User, LogOut } from "lucide-react";
+import CreditBalance from "./CreditBalance";
 
 export default function Header() {
   const { user, loading, signInWithGoogle, signOut } = useAuth();
@@ -38,6 +39,7 @@ export default function Header() {
             </Button>
           ) : user ? (
             <div className="flex items-center gap-4">
+              <CreditBalance />
               <div className="text-sm">
                 {user.displayName || user.email}
               </div>
@@ -109,6 +111,7 @@ export default function Header() {
               </Button>
             ) : user ? (
               <div className="space-y-2">
+                <CreditBalance />
                 <div className="text-sm font-medium">
                   {user.displayName || user.email}
                 </div>

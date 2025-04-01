@@ -28,14 +28,25 @@ export default function SubscriptionTiers() {
       setIsLoading(true);
       setSelectedTier(tierId);
 
+      // Get the Firebase ID token
+      const token = await user.getIdToken();
+      
+      // Find the selected tier
+      const selectedTierData = SUBSCRIPTION_TIERS.find(tier => tier.id === tierId);
+      
+      if (!selectedTierData?.stripePriceId) {
+        throw new Error('Invalid subscription tier');
+      }
+
       const response = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          tierId,
-          returnUrl: window.location.origin
+          priceId: selectedTierData.stripePriceId,
+          credits: selectedTierData.pagesPerMonth
         }),
       });
 
