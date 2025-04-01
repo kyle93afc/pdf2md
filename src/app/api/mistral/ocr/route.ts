@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
 
-export const config = {
-  maxDuration: 300, // 5 minutes to process large PDFs
-  api: {
-    responseLimit: '50mb', // Allow large responses for PDFs with many pages
-    bodyParser: {
-      sizeLimit: '50mb' // Allow large files
-    }
-  }
-};
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {

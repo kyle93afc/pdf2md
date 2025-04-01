@@ -20,34 +20,16 @@ export default function ObsidianMarkdownPreview({
   content,
   imageBlobUrls,
 }: ObsidianMarkdownPreviewProps) {
-  // Replace image references in the markdown with blob URLs for preview
-  let previewContent = content;
-
+  // Use a completely different approach to handle the images
+  
   console.log("Processing markdown content:", {
     originalContent: content.substring(0, 100) + "...",
-    imageUrls: imageBlobUrls
+    imageUrlsCount: Object.keys(imageBlobUrls).length,
+    imageUrlsKeys: Object.keys(imageBlobUrls).slice(0, 3),
+    samplesUrls: Object.values(imageBlobUrls).slice(0, 1)
   });
 
-  Object.entries(imageBlobUrls).forEach(([filename, url]) => {
-    // Escape filename for use in regex
-    const escapedFilename = filename.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&"); 
-    // Regex to match ![alt text](filename) - make it more lenient
-    const pattern = new RegExp(
-      `!\\[[^\\]]*\\]\\(${escapedFilename}\\)`,
-      "g"
-    );
-    const replacement = `![](${url})`;
-    previewContent = previewContent.replace(pattern, replacement);
-    console.log(`Replacing image reference:`, {
-      filename,
-      pattern: pattern.toString(),
-      replacement
-    });
-  });
-
-  console.log("Final content:", previewContent.substring(0, 100) + "...");
-
-  // Custom components for ReactMarkdown
+  // Custom components for ReactMarkdown with direct image handling
   const components = {
     code({ node, inline, className, children, ...props }: any) {
       const match = /language-(\\w+)/.exec(className || "");
@@ -68,25 +50,79 @@ export default function ObsidianMarkdownPreview({
       );
     },
     img({ src, alt, ...props }: any) {
-      console.log("Rendering image:", { src, alt });
-      if (!src) {
-        console.warn("Image with no src:", { alt, props });
-        return null;
+      console.log("Image rendering attempted:", { src, alt });
+      
+      // If it's already a data URL from our previous replacements, use it directly
+      if (src && src.startsWith('data:')) {
+        return (
+          <img 
+            src={src} 
+            alt={alt || ""} 
+            className="obsidian-image" 
+            {...props}
+          />
+        );
       }
+      
+      // Try to find the matching image in our blob URLs
+      let imgSrc = "";
+      let foundKey = "";
+      
+      // Method 1: Direct match with the full path
+      if (src && imageBlobUrls[src]) {
+        imgSrc = imageBlobUrls[src];
+        foundKey = src;
+      } 
+      // Method 2: Try to match by basename only
+      else if (src) {
+        const srcBasename = src.split('/').pop();
+        for (const [path, url] of Object.entries(imageBlobUrls)) {
+          const pathBasename = path.split('/').pop();
+          if (srcBasename === pathBasename) {
+            imgSrc = url;
+            foundKey = path;
+            break;
+          }
+        }
+      }
+      // Method 3: If the path has "img-X" pattern, try to match by index
+      if (!imgSrc && src && src.includes('img-')) {
+        const matches = src.match(/img-(\d+)/);
+        if (matches && matches[1]) {
+          const targetIndex = matches[1];
+          for (const [path, url] of Object.entries(imageBlobUrls)) {
+            if (path.includes(`img-${targetIndex}.`)) {
+              imgSrc = url;
+              foundKey = path;
+              break;
+            }
+          }
+        }
+      }
+      
+      console.log("Image processing result:", { 
+        original: src, 
+        found: !!imgSrc,
+        foundKey: foundKey || "none"
+      });
+      
+      if (imgSrc) {
+        return (
+          <img 
+            src={imgSrc} 
+            alt={alt || ""} 
+            className="obsidian-image" 
+            {...props}
+          />
+        );
+      }
+      
+      // Fallback for when we can't find a match
+      console.warn("No matching image found for:", src);
       return (
-        <img 
-          src={src} 
-          alt={alt || ""} 
-          className="obsidian-image" 
-          {...props}
-          onError={(e) => {
-            console.error("Image failed to load:", {
-              src,
-              alt,
-              error: e
-            });
-          }}
-        />
+        <div className="bg-muted p-4 rounded flex items-center justify-center text-muted-foreground">
+          <span>Image not found: {src || "unnamed"}</span>
+        </div>
       );
     },
     a({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) {
@@ -113,7 +149,7 @@ export default function ObsidianMarkdownPreview({
         rehypePlugins={[rehypeKatex, rehypeRaw]}
         components={components}
       >
-        {previewContent}
+        {content}
       </ReactMarkdown>
 
       <style jsx global>{`

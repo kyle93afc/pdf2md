@@ -149,7 +149,13 @@ export default function FileUpload() {
   };
 
   const handleConversionComplete = (markdown: string, images: { base64: string; index: number; mimeType: string }[]) => {
-    console.log("Conversion complete, markdown length:", markdown.length, "images:", images.length);
+    console.log("Conversion complete, markdown length:", markdown?.length, "images:", images?.length);
+    
+    if (!markdown || !images) {
+      handleConversionError("Received empty conversion result");
+      return;
+    }
+
     setMarkdownResult(markdown);
     setExtractedImages(images);
     setIsProcessing(false);
@@ -162,8 +168,31 @@ export default function FileUpload() {
   const handleConversionError = (error: string) => {
     console.error("Conversion error:", error);
     setIsProcessing(false);
-    toast.error(`Error: ${error}`);
+    setMarkdownResult(null);
+    setExtractedImages([]);
+    if (error && error.trim()) {
+      toast.error(`Error: ${error}`);
+    }
   };
+
+  // Debug useEffect for image path troubleshooting
+  useEffect(() => {
+    if (markdownResult && extractedImages.length > 0) {
+      console.log("Markdown preview debugging:", {
+        firstImageRef: markdownResult.includes("![") ? 
+          markdownResult.substring(
+            markdownResult.indexOf("!["), 
+            markdownResult.indexOf("![") + 50
+          ) : "No image refs",
+        imageBlobUrlKeys: Object.keys(Object.fromEntries(
+          extractedImages.map((img, index) => [
+            `images/img-${index}.${getExtensionFromMime(img.mimeType)}`,
+            `data:${img.mimeType};base64,${img.base64}`
+          ])
+        ))
+      });
+    }
+  }, [markdownResult, extractedImages]);
 
   return (
     <div>
@@ -348,6 +377,7 @@ export default function FileUpload() {
               
               <Card className="mt-4">
                 <ScrollArea className="h-[500px] w-full rounded-md border p-4">
+                  {/* Debug logging moved to useEffect to avoid React node error */}
                   <ObsidianMarkdownPreview
                     content={markdownResult}
                     imageBlobUrls={Object.fromEntries(
