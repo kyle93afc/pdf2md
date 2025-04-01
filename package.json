@@ -6,21 +6,25 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "stripe:setup": "ts-node scripts/setup-stripe-products.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^0.0.48",
     "@ai-sdk/openai": "^0.0.54",
     "@deepgram/sdk": "^3.6.0",
+    "@radix-ui/react-progress": "^1.1.2",
     "@radix-ui/react-scroll-area": "^1.2.3",
     "@radix-ui/react-slot": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.6",
+    "@stripe/stripe-js": "^6.1.0",
     "@types/uuid": "^10.0.0",
     "ai": "^3.3.20",
     "axios": "^1.8.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
+    "dotenv": "^16.4.7",
     "file-saver": "^2.0.5",
     "firebase": "^10.14.1",
     "framer-motion": "^11.3.31",
@@ -38,7 +42,7 @@
     "replicate": "^0.32.0",
     "sonner": "^2.0.2",
     "stripe": "^17.7.0",
-    "tailwind-merge": "^3.0.2",
+    "tailwind-merge": "^3.1.0",
     "tailwindcss-animate": "^1.0.7",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.0.0",
@@ -56,6 +60,7 @@
     "eslint-config-next": "14.2.7",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }

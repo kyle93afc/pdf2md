@@ -1,97 +1,102 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import stripe from '@/lib/stripe/stripe';
-import { updateSubscriptionTier } from '@/lib/services/subscription-service';
+import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { db } from '@/lib/firebase/firebase';
+import { doc, runTransaction, collection, addDoc } from 'firebase/firestore';
 
-// Disable body parsing, we need the raw body
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// Initialize Stripe with your secret key
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2025-02-24.acacia',
+});
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.text();
-    const signature = headers().get('stripe-signature') || '';
-    
-    // This is your Stripe webhook secret for testing your endpoint locally
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      return NextResponse.json(
-        { error: 'Webhook secret not configured' },
-        { status: 500 }
-      );
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+
+async function updateUserCredits(userId: string, credits: number) {
+  const userRef = doc(db, 'users', userId);
+  
+  await runTransaction(db, async (transaction) => {
+    const userDoc = await transaction.get(userRef);
+    if (!userDoc.exists()) {
+      throw new Error('User not found');
     }
-    
-    let event;
+
+    const currentCredits = userDoc.data().credits || 0;
+    transaction.update(userRef, {
+      credits: currentCredits + credits,
+      lastUpdated: new Date(),
+    });
+  });
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.text();
+    const headersList = headers();
+    const signature = headersList.get('stripe-signature')!;
+
+    // Verify webhook signature
+    let event: Stripe.Event;
     try {
       event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
     } catch (err) {
-      return NextResponse.json(
-        { error: `Webhook signature verification failed: ${err instanceof Error ? err.message : 'Unknown error'}` },
-        { status: 400 }
-      );
+      console.error('Webhook signature verification failed:', err);
+      return new NextResponse('Webhook signature verification failed', { status: 400 });
     }
-    
+
     // Handle the event
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object as any;
+        const session = event.data.object as Stripe.Checkout.Session;
+        const metadata = session.metadata || {};
         
-        // Extract metadata
-        const { firebaseUID, tierId } = session.metadata;
-        
-        if (firebaseUID && tierId) {
-          // Update the user's subscription
-          await updateSubscriptionTier(
-            firebaseUID,
-            tierId,
-            session.customer as string,
-            session.subscription as string
-          );
+        // If this is a test event (no metadata), just log and return success
+        if (!metadata.userId || !metadata.credits) {
+          console.log('Test event received - no metadata present');
+          return new NextResponse('Test event processed', { status: 200 });
         }
+
+        await updateUserCredits(
+          metadata.userId,
+          parseInt(metadata.credits)
+        );
+
+        // Create payment history record
+        const paymentRecord = {
+          userId: metadata.userId,
+          transactionId: session.id,
+          amount: session.amount_total! / 100, // Convert from cents
+          credits: parseInt(metadata.credits),
+          status: 'succeeded',
+          createdAt: new Date(),
+        };
+
+        await addDoc(collection(db, 'paymentHistory'), paymentRecord);
         break;
       }
-      
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as any;
-        const customerId = subscription.customer;
-        
-        // Find user by customer ID and update their subscription status
-        // This is simplified, in a real app you would need to query your database to find the user by customer ID
-        // For now, we'll assume the user ID is in the metadata
-        if (subscription.metadata && subscription.metadata.firebaseUID) {
-          await updateSubscriptionTier(
-            subscription.metadata.firebaseUID,
-            subscription.metadata.tierId,
-            customerId,
-            subscription.id
-          );
-        }
+
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        console.log('Payment succeeded:', paymentIntent.id);
         break;
       }
-      
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as any;
-        // Handle subscription cancellation
-        if (subscription.metadata && subscription.metadata.firebaseUID) {
-          // Downgrade to free tier
-          await updateSubscriptionTier(
-            subscription.metadata.firebaseUID,
-            'free'
-          );
-        }
+
+      case 'payment_intent.payment_failed': {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        console.error('Payment failed:', paymentIntent.id);
         break;
+      }
+
+      default: {
+        console.log(`Unhandled event type: ${event.type}`);
       }
     }
-    
-    return NextResponse.json({ received: true });
+
+    return new NextResponse('Webhook processed successfully', { status: 200 });
   } catch (error) {
-    console.error('Error in Stripe webhook:', error);
-    return NextResponse.json(
-      { error: 'Webhook handler failed' },
-      { status: 500 }
+    console.error('Webhook error:', error);
+    return new NextResponse(
+      `Webhook handler failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+      { status: 400 }
     );
   }
 } 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { OCRProcessorProps } from "@/types/ocr-types";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ReactMarkdown from "react-markdown";
@@ -11,16 +10,19 @@ import rehypeKatex from "rehype-katex";
 import { Button } from "@/components/ui/button";
 import { Download, Loader2, Package, AlertCircle } from "lucide-react";
 import { processPdfWithMistralAction } from "@/actions/mistral-ocr-actions";
-import {
-  uploadFileStorage,
-  createSignedUrlStorage,
-  deleteFileStorage
-} from "@/lib/storage-helpers";
-import { STORAGE_BUCKETS } from "@/lib/storage-constants";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import "katex/dist/katex.min.css"; // Keep KaTeX CSS
 import { ErrorBoundary } from "./ErrorBoundary";
+
+// Define props directly
+interface MistralOCRProcessorProps {
+  fileUrl: string; // Changed from file
+  fileName: string;
+  onComplete: (markdown: string, images: { base64: string; index: number; mimeType: string }[]) => void;
+  onError: (error: string) => void;
+  pagesRemaining?: number; // Optional prop
+}
 
 // Helper to get file extension from MIME type
 const getExtensionFromMime = (mimeType: string): string => {
@@ -41,20 +43,19 @@ const getExtensionFromMime = (mimeType: string): string => {
 };
 
 export default function MistralOCRProcessor({
-  file,
+  fileUrl, // Use fileUrl
+  fileName, // Use fileName
   onComplete,
   onError
-}: OCRProcessorProps) {
+}: MistralOCRProcessorProps) { // Use new props interface
   const [markdown, setMarkdown] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [uploadedPath, setUploadedPath] = useState<string>("");
   const [extractedImages, setExtractedImages] = useState<
     { base64: string; index: number; mimeType: string }[]
   >([]);
   const [processingStage, setProcessingStage] = useState<string>("");
   const [processingProgress, setProcessingProgress] = useState<number>(0);
   const processingStartedRef = useRef(false);
-  const currentFileRef = useRef<File | null>(null);
 
   // Custom components for ReactMarkdown
   const components = {
@@ -118,10 +119,10 @@ export default function MistralOCRProcessor({
   const handleDownloadMarkdown = () => {
     const blob = new Blob([markdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
-    const filename = `${file.name.replace(/\.[^/.]+$/, "")}.md`;
+    const downloadFilename = `${fileName.replace(/\.[^/.]+$/, "")}.md`;
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename;
+    a.download = downloadFilename;
     document.body.appendChild(a);
     try {
       a.click();
@@ -202,7 +203,7 @@ export default function MistralOCRProcessor({
   // Download Zip with images folder and adjusted markdown paths
   const handleDownloadZip = async () => {
     const zip = new JSZip();
-    const folderName = file.name.replace(/\.[^/.]+$/, "");
+    const folderName = fileName.replace(/\.[^/.]+$/, "");
     const imagesFolder = zip.folder("images");
     if (!imagesFolder) {
       console.error("Failed to create images folder in zip.");
@@ -249,56 +250,30 @@ export default function MistralOCRProcessor({
     }
   };
 
-  // Enhanced processFile function with better error handling and progress tracking
-  const processFile = async () => {
-    let tempPath = "";
+  // Updated process function using fileUrl
+  const processPdfFromUrl = async () => {
     setLoading(true);
     setMarkdown("");
     setExtractedImages([]);
-    setUploadedPath("");
     setProcessingStage("Initializing...");
     setProcessingProgress(0);
-    onError("");
+    onError(""); // Clear previous errors
 
     try {
-      // Validate input file
-      if (!file || !(file instanceof File)) {
-        throw new Error("Invalid file provided");
+      if (!fileUrl) {
+        throw new Error("No file URL provided for processing");
       }
 
-      // Upload stage
-      setProcessingStage("Uploading PDF...");
-      setProcessingProgress(10);
-      const tempFileName = `temp/${Date.now()}-${file.name}`;
-      const uploadResult = await uploadFileStorage(
-        STORAGE_BUCKETS.PDF_UPLOADS,
-        tempFileName,
-        file,
-        { upsert: true }
-      );
+      // No need to upload, file is already in storage
+      setProcessingProgress(30); // Start progress after upload step
 
-      if (!uploadResult.isSuccess || !uploadResult.data) {
-        throw new Error(uploadResult.message || "Failed to upload PDF file.");
-      }
-      tempPath = uploadResult.data.path;
-      setUploadedPath(tempPath);
-      setProcessingProgress(30);
-
-      // URL Generation stage
-      setProcessingStage("Preparing for processing...");
-      const urlResult = await createSignedUrlStorage(
-        STORAGE_BUCKETS.PDF_UPLOADS,
-        tempPath
-      );
-
-      if (!urlResult.isSuccess || !urlResult.data?.signedUrl) {
-        throw new Error(urlResult.message || "Failed to create signed URL.");
-      }
+      // No need for signed URL generation if action can handle direct URL or path?
+      // Assuming processPdfWithMistralAction can handle the storage URL directly
       setProcessingProgress(50);
-
-      // Processing stage
       setProcessingStage("Processing PDF with OCR...");
-      const response = await processPdfWithMistralAction(urlResult.data.signedUrl);
+
+      // Call the server action with the URL
+      const response = await processPdfWithMistralAction(fileUrl);
 
       if (!response.isSuccess || !response.data) {
         console.error("Server response:", response);
@@ -356,7 +331,7 @@ export default function MistralOCRProcessor({
       onComplete(response.data.text, validImages);
 
     } catch (error) {
-      console.error("Error processing file:", error);
+      console.error("Error processing PDF from URL:", error);
       const errorMessage = error instanceof Error 
         ? error.message 
         : "Failed to process file";
@@ -364,58 +339,30 @@ export default function MistralOCRProcessor({
       setProcessingStage(`Error: ${errorMessage}`);
     } finally {
       setLoading(false);
-      if (tempPath) {
-        try {
-          await deleteFileStorage(STORAGE_BUCKETS.PDF_UPLOADS, tempPath);
-          setUploadedPath("");
-        } catch (cleanupError) {
-          console.error("Error cleaning up temporary file:", cleanupError);
-        }
-      }
+      // No temporary file to delete here as it was uploaded by the parent
     }
   };
 
-  // useEffect to trigger processing when the file prop changes
+  // useEffect to trigger processing when the fileUrl prop changes
   useEffect(() => {
-    if (file && file !== currentFileRef.current) {
-      console.log("Client: New file prop detected. Resetting and starting processing.");
-      currentFileRef.current = file; // Update the current file ref
-      processingStartedRef.current = false; // Reset processing flag for the new file
-
-      if (!processingStartedRef.current) {
-        processingStartedRef.current = true; // Set flag to true
-        processFile().catch((err) => {
-            console.error("Client: Unhandled error in processFile execution:", err);
-            onError(err instanceof Error ? err.message : "Unknown error during processing start");
-            processingStartedRef.current = false; // Reset flag on error
-        });
-      }
-    } else if (!file) {
-        console.log("Client: File prop removed or became null.");
-        currentFileRef.current = null;
+    if (fileUrl && !processingStartedRef.current) {
+      console.log("Client: New fileUrl prop detected. Starting processing.");
+      processingStartedRef.current = true; // Set flag
+      processPdfFromUrl().catch((err) => {
+          console.error("Client: Unhandled error in processPdfFromUrl execution:", err);
+          onError(err instanceof Error ? err.message : "Unknown error during processing start");
+          processingStartedRef.current = false; // Reset flag on error
+      });
+    } else if (!fileUrl) {
+        console.log("Client: fileUrl prop removed or became null.");
         processingStartedRef.current = false;
         setMarkdown("");
         setExtractedImages([]);
-        setUploadedPath("");
         setLoading(false);
     }
 
-    return () => {
-      console.log("Client: MistralOCRProcessor effect cleanup running.");
-    };
-  }, [file, onComplete, onError]);
-
-  // Separate useEffect for cleaning up the temp file on unmount if path exists
-   useEffect(() => {
-     const pathToDelete = uploadedPath;
-     return () => {
-       if (pathToDelete) {
-         console.log(`Client Unmount Cleanup: Deleting temp file ${pathToDelete}...`);
-         deleteFileStorage(STORAGE_BUCKETS.PDF_UPLOADS, pathToDelete)
-           .catch(console.error);
-       }
-     };
-   }, [uploadedPath]);
+    // No cleanup needed here for file deletion
+  }, [fileUrl, onComplete, onError]); // Depend on fileUrl
 
   return (
     <ErrorBoundary>
