@@ -3,33 +3,9 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { loadStripe } from '@stripe/stripe-js';
+import { CREDIT_PACKAGES } from '@/lib/stripe/config';
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-
-const creditPackages = [
-  {
-    name: 'Starter',
-    credits: 100,
-    price: 5,
-    priceId: 'price_starter',
-    description: 'Perfect for small documents',
-  },
-  {
-    name: 'Professional',
-    credits: 500,
-    price: 20,
-    priceId: 'price_professional',
-    description: 'Great for regular use',
-    popular: true,
-  },
-  {
-    name: 'Enterprise',
-    credits: 2000,
-    price: 50,
-    priceId: 'price_enterprise',
-    description: 'Best value for heavy users',
-  },
-];
 
 export default function PricingPlans() {
   const { user } = useAuth();
@@ -39,10 +15,18 @@ export default function PricingPlans() {
     try {
       setLoading(priceId);
       
+      // Get the Firebase ID token
+      const token = await user?.getIdToken();
+      
+      if (!token) {
+        throw new Error('User not authenticated');
+      }
+
       const response = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           priceId,
@@ -50,20 +34,14 @@ export default function PricingPlans() {
         }),
       });
 
-      const { sessionId } = await response.json();
-      const stripe = await stripePromise;
-      
-      if (!stripe) {
-        throw new Error('Stripe failed to load');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session');
       }
 
-      const { error } = await stripe.redirectToCheckout({
-        sessionId,
-      });
-
-      if (error) {
-        throw error;
-      }
+      // Redirect to Stripe Checkout using the URL from the response
+      window.location.href = data.url;
     } catch (error) {
       console.error('Error:', error);
       alert('Failed to checkout. Please try again.');
@@ -85,33 +63,33 @@ export default function PricingPlans() {
         </div>
 
         <div className="mt-12 space-y-4 sm:mt-16 sm:space-y-0 sm:grid sm:grid-cols-3 sm:gap-6 lg:max-w-4xl lg:mx-auto">
-          {creditPackages.map((pkg) => (
+          {CREDIT_PACKAGES.map((pkg) => (
             <div
-              key={pkg.priceId}
+              key={pkg.id}
               className={`rounded-lg shadow-lg divide-y divide-gray-200 ${
-                pkg.popular ? 'border-2 border-blue-500' : ''
+                pkg.id === 'pro' ? 'border-2 border-blue-500' : ''
               }`}
             >
               <div className="p-6">
-                {pkg.popular && (
+                {pkg.id === 'pro' && (
                   <span className="inline-flex px-4 py-1 rounded-full text-sm font-semibold tracking-wide uppercase bg-blue-100 text-blue-600 mb-4">
                     Most Popular
                   </span>
                 )}
                 <h3 className="text-2xl font-semibold text-gray-900">{pkg.name}</h3>
-                <p className="mt-4 text-gray-500">{pkg.description}</p>
+                <p className="mt-4 text-gray-500">Perfect for {pkg.credits} pages</p>
                 <p className="mt-8">
                   <span className="text-4xl font-extrabold text-gray-900">${pkg.price}</span>
                 </p>
                 <p className="mt-2 text-gray-500">{pkg.credits} credits</p>
                 <button
-                  onClick={() => handleCheckout(pkg.priceId, pkg.credits)}
-                  disabled={!user || loading === pkg.priceId}
+                  onClick={() => handleCheckout(pkg.stripePriceId, pkg.credits)}
+                  disabled={!user || loading === pkg.stripePriceId || !pkg.stripePriceId}
                   className={`mt-8 block w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-md transition duration-150 ease-in-out ${
-                    !user || loading === pkg.priceId ? 'opacity-50 cursor-not-allowed' : ''
+                    !user || loading === pkg.stripePriceId || !pkg.stripePriceId ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
-                  {loading === pkg.priceId ? 'Processing...' : 'Purchase Credits'}
+                  {loading === pkg.stripePriceId ? 'Processing...' : 'Purchase Credits'}
                 </button>
               </div>
             </div>
