@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { adminAuth } from '@/lib/firebase/admin';
+import { SUBSCRIPTION_TIERS } from '@/config/subscription-tiers';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-02-24.acacia',
@@ -32,8 +33,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Check if this is a subscription purchase by looking up the price ID in subscription tiers
+    const isSubscription = SUBSCRIPTION_TIERS.some(tier => tier.stripePriceId === priceId);
+
     const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
+      mode: isSubscription ? 'subscription' : 'payment',
       payment_method_types: ['card'],
       line_items: [
         {
@@ -44,9 +48,14 @@ export async function POST(req: NextRequest) {
       metadata: {
         userId: userId,
         credits: credits.toString(),
+        type: isSubscription ? 'subscription' : 'credits'
       },
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/dashboard?canceled=true`,
+      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}${
+        isSubscription ? '/subscription/success' : '/dashboard'
+      }?success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}${
+        isSubscription ? '/subscription/cancel' : '/dashboard'
+      }?canceled=true`,
     });
 
     return NextResponse.json({ url: session.url });

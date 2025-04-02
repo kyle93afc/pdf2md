@@ -37,62 +37,93 @@ export async function POST(req: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const metadata = session.metadata;
 
-        if (!metadata?.userId || !metadata?.credits) {
-          console.error('Webhook Error: Missing userId or credits in metadata', metadata);
+        if (!metadata?.userId || !metadata?.credits || !metadata?.type) {
+          console.error('Webhook Error: Missing required metadata', metadata);
           throw new Error('Missing required metadata');
         }
 
         const userId = metadata.userId;
         const creditsToAdd = Number(metadata.credits);
+        const purchaseType = metadata.type;
 
         if (isNaN(creditsToAdd)) {
-           console.error('Webhook Error: Invalid credits value in metadata', metadata.credits);
-           throw new Error('Invalid credits value');
+          console.error('Webhook Error: Invalid credits value in metadata', metadata.credits);
+          throw new Error('Invalid credits value');
         }
 
-        // --- START: Server-side credit update logic ---
-        const userCreditsRef = adminDb.collection('user_credits').doc(userId);
-
-        try {
+        // Handle subscription purchase
+        if (purchaseType === 'subscription') {
+          const userSubscriptionRef = adminDb.collection('user_subscriptions').doc(userId);
+          await userSubscriptionRef.set({
+            status: 'active',
+            pagesPerMonth: creditsToAdd,
+            startDate: Timestamp.now(),
+            endDate: Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+            lastUpdated: Timestamp.now(),
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: session.subscription as string
+          });
+          console.log(`Successfully created subscription for user ${userId}`);
+        }
+        
+        // Handle credit purchase
+        if (purchaseType === 'credits') {
+          const userCreditsRef = adminDb.collection('user_credits').doc(userId);
+          try {
             await adminDb.runTransaction(async (transaction) => {
               const userCreditsDoc = await transaction.get(userCreditsRef);
 
               if (!userCreditsDoc.exists) {
-                // Create the document if it doesn't exist
                 transaction.set(userCreditsRef, {
                   balance: creditsToAdd,
-                  lastUpdated: Timestamp.now(), // Use Firestore Admin Timestamp
+                  lastUpdated: Timestamp.now(),
                 });
               } else {
-                // Increment the balance if the document exists
                 transaction.update(userCreditsRef, {
-                  // Use Firestore Admin FieldValue for increment
-                  balance: FieldValue.increment(creditsToAdd), 
+                  balance: FieldValue.increment(creditsToAdd),
                   lastUpdated: Timestamp.now(),
                 });
               }
             });
-             console.log(`Successfully updated credits for user ${userId}. Added: ${creditsToAdd}`);
-        } catch (error) {
+            console.log(`Successfully updated credits for user ${userId}. Added: ${creditsToAdd}`);
+          } catch (error) {
             console.error(`Error updating credits for user ${userId} in transaction:`, error);
-            // Decide if you want to throw the error to stop the webhook processing 
-            // or just log it and continue (e.g., to still record payment history).
-            // Throwing it will make Stripe retry the webhook.
-            throw new Error(`Failed to update user credits: ${error}`); 
+            throw new Error(`Failed to update user credits: ${error}`);
+          }
         }
-        // --- END: Server-side credit update logic ---
-
 
         // Store payment history
         await adminDb.collection('payment_history').add({
-          userId: userId, // Use validated userId
+          userId: userId,
           transactionId: session.id,
           amount: session.amount_total ? session.amount_total / 100 : 0,
-          credits: creditsToAdd, // Use validated creditsToAdd
+          credits: creditsToAdd,
+          type: purchaseType,
           status: 'succeeded',
           createdAt: Timestamp.now(),
         });
         console.log(`Successfully recorded payment history for user ${userId}, transaction ${session.id}`);
+
+        break;
+      }
+
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const userId = subscription.metadata.userId;
+        
+        if (!userId) {
+          throw new Error('Missing userId in subscription metadata');
+        }
+
+        const status = subscription.status === 'active' ? 'active' : 'canceled';
+        
+        const userSubscriptionRef = adminDb.collection('user_subscriptions').doc(userId);
+        await userSubscriptionRef.update({
+          status: status,
+          lastUpdated: Timestamp.now(),
+          currentPeriodEnd: Timestamp.fromMillis(subscription.current_period_end * 1000)
+        });
 
         break;
       }

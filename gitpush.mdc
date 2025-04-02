@@ -1,0 +1,113 @@
+# Git Commit & Push Guidelines
+
+## Commit Message Format
+
+```
+<type>(<scope>): <subject>
+
+[optional body]
+
+[optional footer]
+```
+
+### Types
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, missing semi-colons, etc)
+- `refactor`: Code refactoring
+- `perf`: Performance improvements
+- `test`: Adding or modifying tests
+- `chore`: Build process, tooling changes
+
+### Scope
+- Optional, in parentheses
+- Specifies the part of the codebase affected
+- Examples: (auth), (api), (ui), (db)
+
+### Subject
+- Imperative mood ("add" not "added" or "adds")
+- No period at the end
+- Max 50 characters
+- Start with lowercase
+
+### Body
+- Optional detailed description
+- Wrap at 72 characters
+- Use to explain what and why vs. how
+
+### Footer
+- Optional
+- Reference issues being closed
+- Breaking changes
+
+## Examples
+
+✅ Good:
+```
+feat(auth): add OAuth2 login with Google
+fix(api): handle null response from payment service
+docs(readme): update deployment instructions
+style: standardize quote usage to single quotes
+```
+
+❌ Bad:
+```
+fixed bug
+updated stuff
+WIP
+quick fix
+```
+
+## Before Pushing
+
+1. Run all tests
+2. Update documentation if needed
+3. Check for sensitive data
+4. Review changes with `git diff`
+5. Pull latest changes from remote
+6. Resolve any conflicts
+7. Push to correct branch
+
+## Branch Naming
+
+```
+<type>/<description>
+```
+
+Examples:
+- `feature/user-auth`
+- `bugfix/payment-flow`
+- `hotfix/security-patch`
+- `release/v1.2.0`
+
+## Git Commands Cheatsheet
+
+```bash
+# Stage changes
+git add .
+git add <file>
+
+# Commit
+git commit -m "type(scope): subject"
+
+# Push
+git push origin <branch>
+
+# Pull latest changes
+git pull origin <branch>
+
+# Create new branch
+git checkout -b <branch-name>
+
+# Switch branches
+git checkout <branch-name>
+
+# View status
+git status
+
+# View commit history
+git log --oneline
+```
+
+Remember: Clear commit messages help team collaboration and make code history more valuable 🤝 
