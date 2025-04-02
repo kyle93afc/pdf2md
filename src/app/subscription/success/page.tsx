@@ -5,45 +5,67 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function SubscriptionSuccessPage() {
+  const { user, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(true);
   const sessionId = searchParams.get("session_id");
 
   useEffect(() => {
+    if (authLoading || !user) {
+      if (!authLoading && !user) {
+        console.error("SubscriptionSuccessPage: No authenticated user found.");
+        router.push("/");
+      }
+      return;
+    }
+
     if (!sessionId) {
       router.push("/");
       return;
     }
 
-    // Verify the session with our backend
     const verifySession = async () => {
+      console.log("SubscriptionSuccessPage: Verifying session for user:", user.uid);
+      setVerifying(true);
       try {
-        const response = await fetch(`/api/stripe/verify-session?session_id=${sessionId}`);
+        const idToken = await user.getIdToken();
+        if (!idToken) {
+          throw new Error("Failed to get ID token");
+        }
+
+        const response = await fetch(`/api/stripe/verify-session?session_id=${sessionId}`, {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
         
         if (!response.ok) {
-          throw new Error("Failed to verify subscription");
+           const errorData = await response.json().catch(() => ({ message: "Unknown error" }));
+           console.error("SubscriptionSuccessPage: Failed API verification", response.status, errorData);
+          throw new Error(`Failed to verify subscription: ${errorData.message || response.statusText}`);
         }
         
-        setLoading(false);
+        console.log("SubscriptionSuccessPage: Session verified successfully.");
+        setVerifying(false);
       } catch (error) {
         console.error("Error verifying session:", error);
-        // Wait a moment before redirecting
-        setTimeout(() => router.push("/"), 2000);
+        router.push("/");
       }
     };
 
     verifySession();
-  }, [sessionId, router]);
+  }, [sessionId, router, user, authLoading]);
 
-  if (loading) {
+  if (authLoading || verifying) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Processing your subscription...</h1>
-        <p className="text-muted-foreground">Please wait while we verify your payment.</p>
+        <h1 className="text-2xl font-bold mb-2">{authLoading ? "Authenticating..." : "Processing your subscription..."}</h1>
+        <p className="text-muted-foreground">{authLoading ? "Checking your login status." : "Please wait while we verify your payment."}</p>
       </div>
     );
   }

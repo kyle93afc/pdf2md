@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import stripe from '@/lib/stripe/stripe';
-import { auth } from '@/lib/firebase/firebase';
+import { adminAuth } from '@/lib/firebase/admin';
 import { getUserSubscription } from '@/lib/services/subscription-service';
 
 export async function GET(request: NextRequest) {
@@ -15,14 +15,22 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Get the currently logged in user
-    const authUser = auth.currentUser;
-    if (!authUser) {
-      return NextResponse.json(
-        { error: 'User not authenticated' }, 
-        { status: 401 }
-      );
+    // Get Authorization header and verify token
+    const authorization = request.headers.get('Authorization');
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing or invalid token' }, { status: 401 });
     }
+    const idToken = authorization.split('Bearer ')[1];
+
+    // Verify ID token using Firebase Admin SDK
+    let decodedToken;
+    try {
+      decodedToken = await adminAuth.verifyIdToken(idToken);
+    } catch (error) {
+      console.error('Error verifying Firebase ID token:', error);
+      return NextResponse.json({ error: 'Unauthorized: Invalid token' }, { status: 401 });
+    }
+    const userId = decodedToken.uid;
     
     // Retrieve the session from Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -35,7 +43,7 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    if (session.metadata?.firebaseUID !== authUser.uid) {
+    if (session.metadata?.firebaseUID !== userId) {
       return NextResponse.json(
         { error: 'Session does not belong to the current user' }, 
         { status: 403 }
@@ -43,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Get the user's subscription
-    const subscription = await getUserSubscription(authUser.uid);
+    const subscription = await getUserSubscription(userId);
     if (!subscription) {
       return NextResponse.json(
         { error: 'Subscription not found' }, 

@@ -1,31 +1,21 @@
-import { db } from '../firebase/firebase';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs,
-  increment, 
-  Timestamp 
-} from 'firebase/firestore';
+import { adminDb } from '../firebase/admin';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { UserSubscription } from '@/types/subscription-types';
 import { SUBSCRIPTION_TIERS } from '@/config/subscription-tiers';
 
 // Collection names
-const SUBSCRIPTIONS_COLLECTION = 'subscriptions';
+const SUBSCRIPTIONS_COLLECTION = 'user_subscriptions';
 const USAGE_COLLECTION = 'usage';
 
 /**
- * Get a user's subscription
+ * Get a user's subscription using Admin SDK
  */
 export async function getUserSubscription(userId: string): Promise<UserSubscription | null> {
   try {
-    const subscriptionDoc = await getDoc(doc(db, SUBSCRIPTIONS_COLLECTION, userId));
+    const subscriptionRef = adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId);
+    const subscriptionDoc = await subscriptionRef.get();
     
-    if (subscriptionDoc.exists()) {
+    if (subscriptionDoc.exists) {
       return subscriptionDoc.data() as UserSubscription;
     }
     
@@ -33,8 +23,7 @@ export async function getUserSubscription(userId: string): Promise<UserSubscript
     const freeTier = SUBSCRIPTION_TIERS.find(tier => tier.id === 'free');
     if (!freeTier) throw new Error('Free tier not found');
     
-    const now = Date.now();
-    // Set end date to one month from now
+    const now = Timestamp.now();
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + 1);
     
@@ -42,16 +31,16 @@ export async function getUserSubscription(userId: string): Promise<UserSubscript
       userId,
       tierId: 'free',
       status: 'active',
-      currentPeriodStart: now,
+      currentPeriodStart: now.toMillis(),
       currentPeriodEnd: endDate.getTime(),
       pagesUsedThisMonth: 0
     };
     
-    await setDoc(doc(db, SUBSCRIPTIONS_COLLECTION, userId), newSubscription);
+    await subscriptionRef.set(newSubscription);
     return newSubscription;
     
   } catch (error) {
-    console.error('Error getting user subscription:', error);
+    console.error('Error getting user subscription (Admin SDK):', error);
     return null;
   }
 }
@@ -75,25 +64,22 @@ export async function getPagesRemaining(userId: string): Promise<number> {
 }
 
 /**
- * Record usage of pages by a user
+ * Record usage of pages by a user using Admin SDK
  */
 export async function recordPageUsage(userId: string, pageCount: number): Promise<boolean> {
   try {
-    // Get current subscription
     const subscription = await getUserSubscription(userId);
     if (!subscription) return false;
     
-    // Check if user has enough pages remaining
     const pagesRemaining = await getPagesRemaining(userId);
     if (pagesRemaining < pageCount) return false;
     
-    // Update pages used
-    await updateDoc(doc(db, SUBSCRIPTIONS_COLLECTION, userId), {
-      pagesUsedThisMonth: increment(pageCount)
+    const subscriptionRef = adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId);
+    await subscriptionRef.update({
+      pagesUsedThisMonth: FieldValue.increment(pageCount)
     });
     
-    // Record usage event
-    await setDoc(doc(collection(db, USAGE_COLLECTION)), {
+    await adminDb.collection(USAGE_COLLECTION).add({
       userId,
       pageCount,
       timestamp: Timestamp.now(),
@@ -102,13 +88,13 @@ export async function recordPageUsage(userId: string, pageCount: number): Promis
     
     return true;
   } catch (error) {
-    console.error('Error recording page usage:', error);
+    console.error('Error recording page usage (Admin SDK):', error);
     return false;
   }
 }
 
 /**
- * Update a user's subscription tier
+ * Update a user's subscription tier using Admin SDK
  */
 export async function updateSubscriptionTier(
   userId: string, 
@@ -120,15 +106,15 @@ export async function updateSubscriptionTier(
     const tier = SUBSCRIPTION_TIERS.find(t => t.id === tierId);
     if (!tier) return false;
     
-    const now = Date.now();
-    // Set end date to one month from now
+    const now = Timestamp.now();
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + 1);
     
-    await updateDoc(doc(db, SUBSCRIPTIONS_COLLECTION, userId), {
+    const subscriptionRef = adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId);
+    await subscriptionRef.update({
       tierId,
       status: 'active',
-      currentPeriodStart: now,
+      currentPeriodStart: now.toMillis(),
       currentPeriodEnd: endDate.getTime(),
       pagesUsedThisMonth: 0,
       ...(stripeCustomerId && { stripeCustomerId }),
@@ -137,7 +123,7 @@ export async function updateSubscriptionTier(
     
     return true;
   } catch (error) {
-    console.error('Error updating subscription tier:', error);
+    console.error('Error updating subscription tier (Admin SDK):', error);
     return false;
   }
 } 

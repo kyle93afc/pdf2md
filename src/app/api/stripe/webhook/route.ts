@@ -37,12 +37,12 @@ export async function POST(req: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const metadata = session.metadata;
 
-        if (!metadata?.userId || !metadata?.credits || !metadata?.type) {
-          console.error('Webhook Error: Missing required metadata', metadata);
-          throw new Error('Missing required metadata');
+        if (!metadata?.firebaseUID || !metadata?.credits || !metadata?.type) {
+          console.error('Webhook Error: Missing required metadata (firebaseUID, credits, type)', metadata);
+          throw new Error(`Missing required metadata: firebaseUID=${metadata?.firebaseUID}, credits=${metadata?.credits}, type=${metadata?.type}`);
         }
 
-        const userId = metadata.userId;
+        const userId = metadata.firebaseUID;
         const creditsToAdd = Number(metadata.credits);
         const purchaseType = metadata.type;
 
@@ -62,8 +62,8 @@ export async function POST(req: NextRequest) {
             lastUpdated: Timestamp.now(),
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: session.subscription as string
-          });
-          console.log(`Successfully created subscription for user ${userId}`);
+          }, { merge: true });
+          console.log(`Successfully created/updated subscription for user ${userId}`);
         }
         
         // Handle credit purchase
@@ -110,10 +110,11 @@ export async function POST(req: NextRequest) {
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
-        const userId = subscription.metadata.userId;
+        const userId = subscription.metadata?.firebaseUID;
         
         if (!userId) {
-          throw new Error('Missing userId in subscription metadata');
+          console.error("Webhook Error: Missing firebaseUID in customer.subscription event metadata", subscription.id);
+          throw new Error('Missing firebaseUID in subscription metadata');
         }
 
         const status = subscription.status === 'active' ? 'active' : 'canceled';

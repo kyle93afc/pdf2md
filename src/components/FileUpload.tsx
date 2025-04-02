@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/card";
 import { Upload, FileText, X, Loader2, User, Download, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { getPagesRemaining } from "@/lib/services/subscription-service";
 import dynamic from "next/dynamic";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase/firebase";
@@ -66,11 +65,36 @@ export default function FileUpload() {
     if (!user) return;
     
     try {
-      const remaining = await getPagesRemaining(user.uid);
-      setPagesRemaining(remaining);
+      // Get the ID token for the authenticated user
+      const idToken = await user.getIdToken();
+      if (!idToken) {
+        throw new Error("Could not get user ID token.");
+      }
+
+      // Call the API route
+      const response = await fetch('/api/subscription/pages-remaining', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown API error" }));
+        throw new Error(`API Error (${response.status}): ${errorData.error || errorData.message}`);
+      }
+
+      const data = await response.json();
+      
+      if (typeof data.pagesRemaining === 'number') {
+        setPagesRemaining(data.pagesRemaining);
+      } else {
+        throw new Error("Invalid data format received from API");
+      }
+      
     } catch (error) {
-      console.error("Error fetching subscription details:", error);
+      console.error("Error fetching subscription details via API:", error);
       toast.error("Failed to fetch subscription information");
+      setPagesRemaining(0); // Default to 0 on error
     }
   };
 

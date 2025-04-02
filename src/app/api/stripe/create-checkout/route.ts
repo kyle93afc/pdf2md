@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       metadata: {
-        userId: userId,
+        firebaseUID: userId,
         credits: credits.toString(),
         type: isSubscription ? 'subscription' : 'credits'
       },
