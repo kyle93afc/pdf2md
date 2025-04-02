@@ -3,7 +3,9 @@ import { headers } from 'next/headers';
 import { stripe, STRIPE_WEBHOOK_SECRET } from '@/lib/stripe/config';
 import { adminDb } from '@/lib/firebase/admin';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
+import type { Transaction } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
+import { doc, setDoc, runTransaction, increment, addDoc, collection } from 'firebase-admin/firestore';
 
 export async function POST(req: NextRequest) {
   if (!stripe) {
@@ -15,7 +17,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.text();
-  const signature = headers().get('stripe-signature');
+  const signature = headers().get('stripe-signature') as string;
 
   if (!signature || !STRIPE_WEBHOOK_SECRET) {
     return NextResponse.json(
@@ -37,14 +39,14 @@ export async function POST(req: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const metadata = session.metadata;
 
-        if (!metadata?.firebaseUID || !metadata?.credits || !metadata?.type) {
-          console.error('Webhook Error: Missing required metadata (firebaseUID, credits, type)', metadata);
-          throw new Error(`Missing required metadata: firebaseUID=${metadata?.firebaseUID}, credits=${metadata?.credits}, type=${metadata?.type}`);
+        if (!metadata?.firebaseUID || !metadata?.credits) {
+          console.error('Webhook Error: Missing required metadata (firebaseUID, credits)', metadata);
+          throw new Error(`Missing required metadata: firebaseUID=${metadata?.firebaseUID}, credits=${metadata?.credits}`);
         }
 
         const userId = metadata.firebaseUID;
         const creditsToAdd = Number(metadata.credits);
-        const purchaseType = metadata.type;
+        const purchaseType = metadata.type || 'credits'; // Default to credits if type not specified
 
         if (isNaN(creditsToAdd)) {
           console.error('Webhook Error: Invalid credits value in metadata', metadata.credits);
@@ -55,6 +57,7 @@ export async function POST(req: NextRequest) {
         if (purchaseType === 'subscription') {
           const userSubscriptionRef = adminDb.collection('user_subscriptions').doc(userId);
           await userSubscriptionRef.set({
+            userId,
             status: 'active',
             pagesPerMonth: creditsToAdd,
             startDate: Timestamp.now(),
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest) {
             lastUpdated: Timestamp.now(),
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: session.subscription as string
-          }, { merge: true });
+          });
           console.log(`Successfully created/updated subscription for user ${userId}`);
         }
         
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
         if (purchaseType === 'credits') {
           const userCreditsRef = adminDb.collection('user_credits').doc(userId);
           try {
-            await adminDb.runTransaction(async (transaction) => {
+            await adminDb.runTransaction(async (transaction: Transaction) => {
               const userCreditsDoc = await transaction.get(userCreditsRef);
 
               if (!userCreditsDoc.exists) {
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
 
         // Store payment history
         await adminDb.collection('payment_history').add({
-          userId: userId,
+          userId,
           transactionId: session.id,
           amount: session.amount_total ? session.amount_total / 100 : 0,
           credits: creditsToAdd,
@@ -119,8 +122,8 @@ export async function POST(req: NextRequest) {
 
         const status = subscription.status === 'active' ? 'active' : 'canceled';
         
-        const userSubscriptionRef = adminDb.collection('user_subscriptions').doc(userId);
-        await userSubscriptionRef.update({
+        const userSubscriptionRef = doc(adminDb, 'user_subscriptions', userId);
+        await setDoc(userSubscriptionRef, {
           status: status,
           lastUpdated: Timestamp.now(),
           currentPeriodEnd: Timestamp.fromMillis(subscription.current_period_end * 1000)
@@ -138,7 +141,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Store failed payment attempt
-        await adminDb.collection('payment_history').add({
+        await addDoc(collection(adminDb, 'payment_history'), {
           userId: metadata.userId,
           transactionId: paymentIntent.id,
           amount: paymentIntent.amount ? paymentIntent.amount / 100 : 0,
