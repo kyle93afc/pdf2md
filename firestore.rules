@@ -41,6 +41,14 @@ service cloud.firestore {
       allow write: if false; // Or adjust as needed
     }
 
+    // User subscriptions collection (using userId field)
+    match /user_subscriptions/{subId} {
+      // Allow users to read their own subscription document by checking the userId field
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Writes should be restricted to backend/admin processes
+      allow write: if false;
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
