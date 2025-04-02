@@ -21,6 +21,10 @@ export const createOrRetrieveCustomer = async (userId: string, email?: string | 
     return userDoc.data().stripeCustomerId;
   }
 
+  if (!stripe) {
+    throw new Error('Stripe is not initialized');
+  }
+
   // Create new Stripe customer
   const customer = await stripe.customers.create({
     email: email || undefined,
@@ -39,6 +43,10 @@ export const createOrRetrieveCustomer = async (userId: string, email?: string | 
 };
 
 export const createCheckoutSession = async ({ priceId, userId, credits }: CreateCheckoutSessionParams) => {
+  if (!stripe) {
+    throw new Error('Stripe is not initialized');
+  }
+
   const customerId = await createOrRetrieveCustomer(userId, auth.currentUser?.email);
 
   const session = await stripe.checkout.sessions.create({
@@ -51,8 +59,8 @@ export const createCheckoutSession = async ({ priceId, userId, credits }: Create
       },
     ],
     mode: 'payment',
-    success_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing`,
+    success_url: `${process.env.APP_URL}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.APP_URL}/pricing`,
     metadata: {
       userId,
       credits,
@@ -63,6 +71,10 @@ export const createCheckoutSession = async ({ priceId, userId, credits }: Create
 };
 
 export const createCustomerPortalSession = async ({ customerId, returnUrl }: CustomerPortalParams) => {
+  if (!stripe) {
+    throw new Error('Stripe is not initialized');
+  }
+
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: returnUrl,

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { stripe, STRIPE_WEBHOOK_SECRET } from '@/lib/stripe/config';
-import { updateUserCredits } from '@/lib/stripe/client';
 import { adminDb } from '@/lib/firebase/admin';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import Stripe from 'stripe';
 
 export async function POST(req: NextRequest) {
+  if (!stripe) {
+    console.error('Webhook Error: Stripe not initialized. Check STRIPE_SECRET_KEY.');
+    return NextResponse.json(
+      { error: 'Internal Server Error: Stripe configuration missing' },
+      { status: 500 }
+    );
+  }
+
   const body = await req.text();
   const signature = headers().get('stripe-signature');
 
@@ -31,21 +38,61 @@ export async function POST(req: NextRequest) {
         const metadata = session.metadata;
 
         if (!metadata?.userId || !metadata?.credits) {
+          console.error('Webhook Error: Missing userId or credits in metadata', metadata);
           throw new Error('Missing required metadata');
         }
 
-        // Update user credits
-        await updateUserCredits(metadata.userId, Number(metadata.credits));
+        const userId = metadata.userId;
+        const creditsToAdd = Number(metadata.credits);
+
+        if (isNaN(creditsToAdd)) {
+           console.error('Webhook Error: Invalid credits value in metadata', metadata.credits);
+           throw new Error('Invalid credits value');
+        }
+
+        // --- START: Server-side credit update logic ---
+        const userCreditsRef = adminDb.collection('user_credits').doc(userId);
+
+        try {
+            await adminDb.runTransaction(async (transaction) => {
+              const userCreditsDoc = await transaction.get(userCreditsRef);
+
+              if (!userCreditsDoc.exists) {
+                // Create the document if it doesn't exist
+                transaction.set(userCreditsRef, {
+                  balance: creditsToAdd,
+                  lastUpdated: Timestamp.now(), // Use Firestore Admin Timestamp
+                });
+              } else {
+                // Increment the balance if the document exists
+                transaction.update(userCreditsRef, {
+                  // Use Firestore Admin FieldValue for increment
+                  balance: FieldValue.increment(creditsToAdd), 
+                  lastUpdated: Timestamp.now(),
+                });
+              }
+            });
+             console.log(`Successfully updated credits for user ${userId}. Added: ${creditsToAdd}`);
+        } catch (error) {
+            console.error(`Error updating credits for user ${userId} in transaction:`, error);
+            // Decide if you want to throw the error to stop the webhook processing 
+            // or just log it and continue (e.g., to still record payment history).
+            // Throwing it will make Stripe retry the webhook.
+            throw new Error(`Failed to update user credits: ${error}`); 
+        }
+        // --- END: Server-side credit update logic ---
+
 
         // Store payment history
         await adminDb.collection('payment_history').add({
-          userId: metadata.userId,
+          userId: userId, // Use validated userId
           transactionId: session.id,
           amount: session.amount_total ? session.amount_total / 100 : 0,
-          credits: Number(metadata.credits),
+          credits: creditsToAdd, // Use validated creditsToAdd
           status: 'succeeded',
           createdAt: Timestamp.now(),
         });
+        console.log(`Successfully recorded payment history for user ${userId}, transaction ${session.id}`);
 
         break;
       }
@@ -76,9 +123,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (error) {
     console.error('Error handling webhook:', error);
+    // Ensure error message is included in response for easier debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown webhook error';
     return NextResponse.json(
-      { error: 'Webhook handler failed' },
-      { status: 400 }
+      { error: `Webhook handler failed: ${errorMessage}` },
+      { status: 400 } // Use 400 for client-side errors (like bad metadata), 500 for server issues
     );
   }
 } 
